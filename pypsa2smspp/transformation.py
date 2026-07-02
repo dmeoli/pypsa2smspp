@@ -232,10 +232,7 @@ class Transformation:
 
             Any other keys are forwarded as solver-constructor kwargs (power-user usage).
         """
-        # NB: assign a fresh config directly (do NOT deepcopy). The parameter
-        # lambdas capture `self` in their closure; a deepcopy leaves them bound
-        # to the original instance, so later overrides of e.g.
-        # config.investment_upper_bound would be silently ignored.
+        # NB: assign a fresh config directly (do NOT deepcopy). 
         self.config = TransformationConfig()
 
         self.merge_links = merge_links
