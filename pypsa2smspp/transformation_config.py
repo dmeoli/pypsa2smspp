@@ -229,12 +229,7 @@ class TransformationConfig:
         self.max_hours_stores = 1
 
         # Cap substituted for a non-finite p_nom_max when building the
-        # InvestmentBlock UpperBound. It must not bind (else it truncates the
-        # optimum) yet stay well scaled: a huge fixed cap like 1e13 wrecks the
-        # numerics (CPLEX/HiGHS abort, and it floors the Lagrangian bundle's
-        # convergence via a badly-scaled master QP). Transformation.create_model
-        # therefore overrides this with investment_upper_bound_factor times the total
-        # energy demand (see there); this default is only a fallback for
+        # InvestmentBlock UpperBound. This default is only a fallback for
         # networks with no demand to scale against.
         self.investment_upper_bound = 1e13
         # Multiple of the total energy demand used as the (proportional,
