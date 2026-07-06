@@ -229,9 +229,10 @@ class TransformationConfig:
         self.max_hours_stores = 1
 
         # Cap substituted for a non-finite p_nom_max when building the
-        # InvestmentBlock UpperBound. np.inf leaves the asset uncapped
-        # (InvestmentBlock treats a non-finite UpperBound as no upper bound);
-        # a finite value caps it. A too-small finite cap silently truncates
-        # the optimum (e.g. a store whose true optimum exceeds the cap).
+        # InvestmentBlock UpperBound. This default is only a fallback for
+        # networks with no demand to scale against.
         self.investment_upper_bound = 1e13
+        # Multiple of the total energy demand used as the (proportional,
+        # well-scaled) non-binding investment cap.
+        self.investment_upper_bound_factor = 1e1
 
