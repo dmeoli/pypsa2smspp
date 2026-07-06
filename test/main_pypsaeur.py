@@ -30,7 +30,7 @@ import pypsa
 # NETWORK_NC = Path(
 #      r"/home/pampado/sector-coupled/pypsa-eur-smspp/resources/smspp/networks/base_s_20___2050.nc"
 # )
-NETWORK_NC = Path(r"C:\Users\aless\sms\transformation_pypsa_smspp\test\networks\network_small.nc")
+NETWORK_NC = Path(r"C:\Users\aless\sms\transformation_pypsa_smspp\test\networks\base_s_2_elec_.nc")
 
 
 # Output
@@ -50,7 +50,7 @@ SOLVER_OPTIONS = {
 }
 
 # Transformation toggles
-CAPACITY_EXPANSION_UCBLOCK = False      # True -> UCBlock, False -> InvestmentBlock
+CAPACITY_EXPANSION_UCBLOCK = False     # True -> UCBlock, False -> InvestmentBlock
 ENABLE_THERMAL_UNITS = False            # False -> everything (except slack) treated as intermittent
 INTERMITTENT_CARRIERS = None           # None -> default renewable_carriers; list/str -> override
 MERGE_LINKS = False                    # False / True / ["tes","battery","h2", ...]
@@ -242,7 +242,7 @@ try:
         n_smspp = reduce_snapshots_and_scale_costs(n_smspp, target=REDUCE_SNAPSHOTS_TO, scale_capital_costs=False)
 
     if DO_ADD_SLACK_UNIT:
-        n_smspp = add_slack_unit(n_smspp)
+        n_smspp = add_slack_unit(n_smspp, exclude_suffixes=())
 
     # Optional cleanups (uncomment if needed)
     if DO_CLEAN_STORAGE_UNITS:

@@ -877,7 +877,7 @@ class Transformation:
         solution_0 = solution.blocks["Solution_0"]
         has_investment = "DesignVariables" in solution_0.variables
     
-        if has_investment:
+        if not self.capacity_expansion_ucblock:
             inner_solution = solution_0.blocks["InnerSolution"]
             solution_data["UCBlock"] = inner_solution
         else:
