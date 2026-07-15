@@ -42,8 +42,8 @@ class TransformationConfig:
             "InitUpDownTime": lambda up_time_before, down_time_before: up_time_before if up_time_before.values[0] > 0 else -down_time_before,
             "MinUpTime": lambda min_up_time: min_up_time,
             "MinDownTime": lambda min_down_time: min_down_time, 
-            "DeltaRampUp": lambda ramp_limit_up, p_nom: ramp_limit_up * p_nom if not np.isnan(ramp_limit_up.values[0]) else p_nom, # Di default MaxPower
-            "DeltaRampDown": lambda ramp_limit_down, p_nom: ramp_limit_down * p_nom if not np.isnan(ramp_limit_down.values[0]) else p_nom,
+            "DeltaRampUp": lambda ramp_limit_up, p_nom, p_nom_extendable: ramp_limit_up.where(p_nom_extendable, ramp_limit_up * p_nom).fillna(p_nom.where(~p_nom_extendable, 1.0)),
+            "DeltaRampDown": lambda ramp_limit_down, p_nom, p_nom_extendable: ramp_limit_down.where(p_nom_extendable, ramp_limit_down * p_nom).fillna(p_nom.where(~p_nom_extendable, 1.0)),
             "MaxPower": lambda p_nom, p_max_pu, p_nom_extendable, capital_cost, p_nom_max: (p_nom * p_max_pu).where(~p_nom_extendable, p_max_pu.where(capital_cost != 0, (p_nom_max * p_max_pu).where(~((p_max_pu == 0) & np.isinf(p_nom_max)), 0.0))),
             "MinPower": lambda p_nom, p_min_pu, p_nom_extendable: (p_nom * p_min_pu).where(~p_nom_extendable, p_min_pu),
             "PrimaryRho": 0.0,
@@ -53,11 +53,11 @@ class TransformationConfig:
             "LinearTerm": lambda marginal_cost: marginal_cost,
             "ConstTerm": lambda stand_by_cost: stand_by_cost,
             "StartUpCost": lambda start_up_cost: start_up_cost,
-            "InitialPower": lambda p_nom, up_time_before: p_nom if up_time_before.values[0] > 0 else 0,
+            "InitialPower": lambda p_nom, up_time_before, p_nom_extendable: p_nom.where(~p_nom_extendable, 1.0) if up_time_before.values[0] > 0 else 0,
             "FixedConsumption": 0.0, # How much the component consumes if off
             "InertiaCommitment": 1.0,
-            "StartUpLimit": lambda ramp_limit_start_up, p_nom: ramp_limit_start_up * p_nom if not np.isnan(ramp_limit_start_up.values[0]) else p_nom,
-            "ShutDownLimit": lambda ramp_limit_shut_down, p_nom: ramp_limit_shut_down * p_nom if not np.isnan(ramp_limit_shut_down.values[0]) else p_nom,
+            "StartUpLimit": lambda ramp_limit_start_up, p_nom, p_nom_extendable: ramp_limit_start_up.where(p_nom_extendable, ramp_limit_start_up * p_nom).fillna(p_nom.where(~p_nom_extendable, 1.0)),
+            "ShutDownLimit": lambda ramp_limit_shut_down, p_nom, p_nom_extendable: ramp_limit_shut_down.where(p_nom_extendable, ramp_limit_shut_down * p_nom).fillna(p_nom.where(~p_nom_extendable, 1.0)),
         }
 
         self.BatteryUnitBlock_parameters = {

@@ -35,7 +35,7 @@ NETWORK_NC = Path(r"C:\Users\aless\sms\transformation_pypsa_smspp\test\networks\
 
 # Output
 OUT_ROOT = Path("output/develop")
-CASE_NAME = "test_sector_coupled_complete"  # if None -> derived from NETWORK_NC.stem
+CASE_NAME = "uc_ucblock"  # if None -> derived from NETWORK_NC.stem
 
 # PyPSA reference solve
 SOLVER_NAME = "gurobi"
@@ -50,8 +50,8 @@ SOLVER_OPTIONS = {
 }
 
 # Transformation toggles
-CAPACITY_EXPANSION_UCBLOCK = False     # True -> UCBlock, False -> InvestmentBlock
-ENABLE_THERMAL_UNITS = False            # False -> everything (except slack) treated as intermittent
+CAPACITY_EXPANSION_UCBLOCK = True    # True -> UCBlock, False -> InvestmentBlock
+ENABLE_THERMAL_UNITS = True            # False -> everything (except slack) treated as intermittent
 INTERMITTENT_CARRIERS = None           # None -> default renewable_carriers; list/str -> override
 MERGE_LINKS = False                    # False / True / ["tes","battery","h2", ...]
 MERGE_SELECTOR = None                  # optional callable (only needed for custom merge tags)
@@ -77,7 +77,7 @@ DO_CLEAN_CICLICITY_STORAGE = False
 DO_CLEAN_DISPATCH_SETPOINTS = True  # drop p_set/e_set on dispatchable comps
 DO_ADD_SLACK_UNIT = True
 DO_REDUCE_SNAPSHOTS = True
-REDUCE_SNAPSHOTS_TO = 200
+REDUCE_SNAPSHOTS_TO = 24
 DO_CLEAN_STORAGE_UNITS = False  # optional, kept off by default
 DO_CLEAN_STORES = False         # optional, kept off by default
 REMOVE_STORE_BUSES = False
