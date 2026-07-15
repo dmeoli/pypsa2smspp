@@ -475,6 +475,7 @@ def correct_dimensions(
     n,
     expansion_ucblock,
     fixed_investment_generators=0,
+    fixed_investment_lines_links=0,
 ):
     """
     Correct SMS++ dimensions based on particular cases/flags
@@ -482,6 +483,8 @@ def correct_dimensions(
     2. if we expand lines with DesignNetworkBlock, define NumberNetworks
     3. if we are in sector coupled, reduce the number of branches associated (if merge_links)
     4. if generator preprocessing makes investment generators fixed, remove them from NumAssets
+    5. if line/link preprocessing makes investment lines/links fixed, remove them from
+       the design lines (UCBlock path) or from NumAssets (InvestmentBlock path)
     """
     
     # Prime righe facoltative perché se ho sector coupled lo gestisco già alla fine...
@@ -497,13 +500,16 @@ def correct_dimensions(
         dimensions['UCBlock']["NumberInstants"] = dimensions['UCBlock']["TimeHorizon"]
     
     if expansion_ucblock:
-       dimensions['InvestmentBlock']['NumberDesignLines'] -= number_ext_merg_links 
-       dimensions['NetworkBlock']['NumberDesignLines_links'] -= number_ext_merg_links 
+       dimensions['InvestmentBlock']['NumberDesignLines'] -= number_ext_merg_links
+       dimensions['NetworkBlock']['NumberDesignLines_links'] -= number_ext_merg_links
+       dimensions['InvestmentBlock']['NumberDesignLines'] -= int(fixed_investment_lines_links)
+       dimensions['NetworkBlock']['NumberDesignLines_links'] -= int(fixed_investment_lines_links)
        if dimensions['InvestmentBlock']['NumberDesignLines'] > 0:
            dimensions['UCBlock']['NumberNetworks'] = 1
     else:
        dimensions['InvestmentBlock']['NumAssets'] -= number_ext_merg_links
        dimensions['InvestmentBlock']['NumAssets'] -= int(fixed_investment_generators)
+       dimensions['InvestmentBlock']['NumAssets'] -= int(fixed_investment_lines_links)
     
     if dimensions['NetworkBlock']['NumberBranches'] > 0:
         # dimensions['NetworkBlock']['NumberBranches'] -= number_merged_links # sbagliato perché viene calcolato dopo e quindi tiene già conto dei 100
@@ -664,6 +670,86 @@ def preprocess_zero_capital_cost_extendable_generators(
     #     f"Preprocessed {len(matched)} extendable generators with zero capital_cost: "
     #     f"set p_nom={fixed_capacity} and p_nom_extendable=False."
     # )
+
+    return (n, fixed_count) if return_fixed_count else n
+
+def preprocess_zero_capital_cost_extendable_lines_links(
+    n,
+    fixed_capacity: float = 1e9,
+    update_bounds: bool = True,
+    logger=print,
+    return_fixed_count: bool = False,
+):
+    """
+    Preprocess extendable lines and links with zero capital cost.
+
+    Passive branches (lines, nominal attribute ``s_nom``) and controllable
+    branches (links, nominal attribute ``p_nom``) matching:
+    - ``<nom>_extendable == True``
+    - ``capital_cost == 0``
+
+    are converted to non-extendable branches with a large fixed capacity, the
+    same treatment applied to zero-capital-cost generators. A branch that can be
+    expanded at no cost and with no finite bound is otherwise unbounded: it maps
+    to a design variable with zero cost and infinite upper bound, which is
+    ill-posed (nothing keeps its capacity finite).
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        The PyPSA network to preprocess.
+    fixed_capacity : float, default 1e9
+        Capacity assigned to matching lines/links.
+    update_bounds : bool, default True
+        If True, also set ``<nom>_min`` and ``<nom>_max`` to fixed_capacity
+        when present.
+    logger : callable, default print
+        Logging function.
+    return_fixed_count : bool, default False
+        If True, also return the number of branches converted to fixed.
+
+    Returns
+    -------
+    pypsa.Network
+        The modified network (same object, modified in place).
+    tuple[pypsa.Network, int]
+        Returned only when return_fixed_count is True.
+    """
+    fixed_count = 0
+
+    for comp, nom in (("lines", "s_nom"), ("links", "p_nom")):
+        df = getattr(n, comp)
+        if df.empty:
+            continue
+
+        ext, cap = f"{nom}_extendable", "capital_cost"
+        required_cols = {ext, cap, nom}
+        missing_cols = required_cols - set(df.columns)
+        if missing_cols:
+            logger(
+                f"Skipping {comp} preprocessing: missing columns "
+                f"{sorted(missing_cols)}."
+            )
+            continue
+
+        mask = (
+            df[ext].fillna(False).astype(bool)
+            & df[cap].fillna(np.nan).eq(0)
+        )
+
+        matched = df.index[mask]
+        if len(matched) == 0:
+            continue
+        fixed_count += len(matched)
+
+        df.loc[matched, ext] = False
+        df.loc[matched, nom] = fixed_capacity
+
+        if update_bounds:
+            if f"{nom}_min" in df.columns:
+                df.loc[matched, f"{nom}_min"] = fixed_capacity
+            if f"{nom}_max" in df.columns:
+                df.loc[matched, f"{nom}_max"] = fixed_capacity
 
     return (n, fixed_count) if return_fixed_count else n
 
