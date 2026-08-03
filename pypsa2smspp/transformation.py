@@ -624,7 +624,27 @@ class Transformation:
                     intermittent_carriers=self.intermittent_carriers,
                     default_intermittent=renewable_carriers,
                 )
-    
+
+                # UCBlock cannot expand a thermal unit: its commitment u_t is a
+                # binary variable and a continuous design would multiply it in
+                # the maximum power constraint, making the model bilinear. Such
+                # a unit would be normalized to a 1 MW module with no design
+                # variable, silently corrupting the model.
+                if (
+                    self.capacity_expansion_ucblock
+                    and attr_name == "ThermalUnitBlock_parameters"
+                    and is_extendable(components_df.loc[[component]],
+                                      components.name, nominal_attrs)
+                ):
+                    raise ValueError(
+                        f"{component} is an extendable thermal unit, which "
+                        "UCBlock cannot expand. Set "
+                        f"{nominal_attrs[components.name]}_extendable=False on "
+                        "it or use the InvestmentBlock path "
+                        "(capacity_expansion_ucblock=False) to expand thermal "
+                        "units."
+                    )
+
                 self.add_UnitBlock(
                     attr_name,
                     components_df.loc[[component]],
@@ -2034,7 +2054,7 @@ class Transformation:
             inner_block_name=inner_block_name,
             **solver_options,
         )
-    
+
         return self.result
 
 
