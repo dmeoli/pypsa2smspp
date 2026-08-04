@@ -1,6 +1,19 @@
 import numpy as np
 
 
+
+def _finite(nominal, cap):
+    """Replace a non-finite nominal capacity with cap.
+
+    PyPSA lets a non-extendable component have an infinite nominal capacity,
+    which SMS++ turns into an unbounded Variable: harmless for a monolithic
+    solve, where the balance constraints bound it, fatal for a Lagrangian one,
+    where those are the constraints being relaxed and the subproblem is then
+    unbounded whatever the multipliers.
+    """
+    return nominal.replace(np.inf, cap).replace(-np.inf, -cap)
+
+
 class TransformationConfig:
     """
     Class for defining the configuration parameter of the PyPSA2SMSpp transformation.
@@ -25,6 +38,15 @@ class TransformationConfig:
             setattr(self, key, value)
 
     def reset(self):
+        # what an infinite nominal capacity of a non-extendable
+        # component is replaced with [see _finite()]
+        self.nominal_capacity_cap = 1e9
+
+        # captured by closure, not passed as an argument: the lambdas
+        # below are introspected to decide which component data to feed
+        # them, so any extra parameter would be looked up as a column
+        cfg = self
+
         # Parameters for intermittent units
         self.IntermittentUnitBlock_parameters = {
             # "Gamma": 0.0,
@@ -84,8 +106,8 @@ class TransformationConfig:
 
         self.BatteryUnitBlock_store_parameters = {
             # "Kappa": 1.0,
-            "MaxPower": lambda e_nom, e_max_pu, max_hours, e_nom_extendable, capital_cost, e_nom_max: (e_nom * e_max_pu / max_hours).where(~e_nom_extendable, e_max_pu.where(capital_cost != 0, (e_nom_max * e_max_pu / max_hours).where(~((e_max_pu == 0) & np.isinf(e_nom_max)), 0.0))),
-            "MinPower": lambda e_nom, e_max_pu, max_hours, e_nom_extendable: - (e_nom * e_max_pu / max_hours).where(~e_nom_extendable, e_max_pu),
+            "MaxPower": lambda e_nom, e_max_pu, max_hours, e_nom_extendable, capital_cost, e_nom_max: (_finite(e_nom, cfg.nominal_capacity_cap) * e_max_pu / max_hours).where(~e_nom_extendable, e_max_pu.where(capital_cost != 0, (e_nom_max * e_max_pu / max_hours).where(~((e_max_pu == 0) & np.isinf(e_nom_max)), 0.0))),
+            "MinPower": lambda e_nom, e_max_pu, max_hours, e_nom_extendable: - (_finite(e_nom, cfg.nominal_capacity_cap) * e_max_pu / max_hours).where(~e_nom_extendable, e_max_pu),
             # "ConverterMaxPower": lambda e_nom, e_max_pu, max_hours, e_nom_extendable: (e_nom * e_max_pu / max_hours).where(~e_nom_extendable, e_max_pu),
             # "DeltaRampUp": np.nan,
             # "DeltaRampDown": np.nan,
@@ -93,8 +115,8 @@ class TransformationConfig:
             "StoringBatteryRho": lambda efficiency_store, snapshots_weighting: snapshots_weighting.iloc[0] * efficiency_store.iloc[0],
             "StandingBatteryRho": lambda standing_loss: 1 - standing_loss.iloc[0],
             "Demand": 0.0,
-            "MinStorage": lambda e_nom, e_min_pu, e_nom_extendable: (e_nom * e_min_pu).where(~e_nom_extendable, e_min_pu),
-            "MaxStorage": lambda e_nom, e_max_pu, e_nom_extendable: (e_nom * e_max_pu).where(~e_nom_extendable, e_max_pu),
+            "MinStorage": lambda e_nom, e_min_pu, e_nom_extendable: (_finite(e_nom, cfg.nominal_capacity_cap) * e_min_pu).where(~e_nom_extendable, e_min_pu),
+            "MaxStorage": lambda e_nom, e_max_pu, e_nom_extendable: (_finite(e_nom, cfg.nominal_capacity_cap) * e_max_pu).where(~e_nom_extendable, e_max_pu),
             "MaxPrimaryPower": 0.0,
             "MaxSecondaryPower": 0.0,
             # "InitialPower": lambda e_initial, max_hours: (e_initial / max_hours).iloc[0],
