@@ -87,7 +87,9 @@ tran = pypsa2smspp.Transformation(
 
 The leaves of the tree are the scenarios of the network, each of them exactly
 once, the probabilities of the outer scenarios sum to one, and so do the
-conditional probabilities of the inner ones of each outer scenario.
+conditional probabilities of the inner ones of each outer scenario. The tree
+has two levels, i.e. the problem has three stages: the design, the outer
+realizations and the inner ones.
 
 Note that the tree is what expresses the dependence on the history: two leaves
 of different branches may well hold different values *and* different

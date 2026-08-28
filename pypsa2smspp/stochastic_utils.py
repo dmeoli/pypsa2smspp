@@ -208,6 +208,11 @@ def normalize_scenario_tree(tree: Optional[Any]) -> Optional[Dict[str, Any]]:
     what this tree describes, and what tells a MultiStageStochasticBlock apart
     from a TwoStageStochasticBlock over the same leaves.
 
+    The tree has two levels, i.e. the problem has three stages: the first-stage
+    design, then the outer realizations, then the inner ones. Deeper trees are
+    representable in SMS++, which nests a MultiStageStochasticBlock into
+    another one, but not here yet.
+
     Accepted forms
     --------------
     {"groups": {"dry": {"probability": 0.3,
