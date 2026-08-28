@@ -5,6 +5,7 @@
 ### New Features and Major Changes
 
 * Support snapshot_weightings != 1 [PR #47](https://github.com/SPSUnipi/pypsa2smspp/pull/47)
+* Emit a MultiStageStochasticBlock from a two-level scenario tree
 
 ### Minor Changes and Bug Fixes
 
