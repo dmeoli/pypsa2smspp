@@ -198,6 +198,73 @@ def get_scenario_probabilities(n) -> np.ndarray:
 # Stochastic parameter normalization and problem structure
 # =============================================================================
 
+def normalize_scenario_tree(tree: Optional[Any]) -> Optional[Dict[str, Any]]:
+    """
+    Normalize the description of a two-level scenario tree.
+
+    A multi-stage problem needs more than the flat list of scenarios a PyPSA
+    network carries: it needs to know which of them descend from the same
+    outer-stage realization, and with which conditional probability. That is
+    what this tree describes, and what tells a MultiStageStochasticBlock apart
+    from a TwoStageStochasticBlock over the same leaves.
+
+    Accepted forms
+    --------------
+    {"groups": {"dry": {"probability": 0.3,
+                        "scenarios": {"dry_low": 0.2, "dry_high": 0.8}}, ...}}
+
+    or the same with "groups" as a list of dicts carrying a "name" key.
+
+    Returns
+    -------
+    {"groups": [{"name": str, "probability": float,
+                 "scenarios": [(name, conditional probability), ...]}, ...]}
+    or None if no tree was given.
+    """
+    if tree is None:
+        return None
+
+    groups = tree.get("groups", tree) if isinstance(tree, Mapping) else tree
+
+    if isinstance(groups, Mapping):
+        items = [(str(name), spec) for name, spec in groups.items()]
+    else:
+        items = [(str(spec["name"]), spec) for spec in groups]
+
+    normalized = []
+    for name, spec in items:
+        scenarios = spec["scenarios"]
+        if isinstance(scenarios, Mapping):
+            pairs = [(str(k), float(v)) for k, v in scenarios.items()]
+        else:
+            pairs = [(str(k), float(v)) for k, v in scenarios]
+
+        if not pairs:
+            raise ValueError(f"Outer scenario {name!r} has no inner scenario.")
+
+        total = sum(p for _, p in pairs)
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError(
+                f"The conditional probabilities of the inner scenarios of "
+                f"{name!r} sum to {total}, not to one."
+            )
+
+        normalized.append({
+            "name": name,
+            "probability": float(spec["probability"]),
+            "scenarios": pairs,
+        })
+
+    total = sum(g["probability"] for g in normalized)
+    if abs(total - 1.0) > 1e-9:
+        raise ValueError(
+            f"The probabilities of the outer scenarios sum to {total}, "
+            "not to one."
+        )
+
+    return {"groups": normalized}
+
+
 def _normalize_stochastic_parameters(
     stochastic_parameters: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
@@ -209,6 +276,15 @@ def _normalize_stochastic_parameters(
     {
         "stochastic_type": "tssb",
         "parameters": ["demand", "renewable_maxpower"]
+    }
+
+    A multi-stage problem asks for "mssb" and for the scenario tree that says
+    how the flat scenarios are grouped [see normalize_scenario_tree()]:
+
+    {
+        "stochastic_type": "mssb",
+        "parameters": ["demand", "renewable_maxpower"],
+        "tree": {"groups": {...}}
     }
     """
     sp = dict(stochastic_parameters or {})
@@ -237,6 +313,9 @@ def _normalize_stochastic_parameters(
     return {
         "stochastic_type": stochastic_type,
         "parameters": parameters,
+        "scenario_tree": normalize_scenario_tree(
+            sp.get("tree", sp.get("scenario_tree", None))
+        ),
     }
 
 
@@ -264,6 +343,7 @@ def describe_problem_structure(
         "has_investment_block": not bool(capacity_expansion_ucblock),
         "stochastic_parameters": stochastic_parameters_list,
         "stochastic_parameter_set": stochastic_parameter_set,
+        "scenario_tree": sp["scenario_tree"] if is_stochastic else None,
     }
 
 
