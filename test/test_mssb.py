@@ -22,6 +22,7 @@ import pytest
 
 from conftest import OUT_TEST
 
+from pypsa2smspp.network_correction import clean_dispatch_setpoints
 from pypsa2smspp.stochastic_utils import normalize_scenario_tree
 from pypsa2smspp.transformation import Transformation
 
@@ -358,6 +359,9 @@ def test_mssb_matches_the_flat_optimum():
     n, tree = build_two_level_network()
 
     reference = n.copy()
+    # a finite p_set on a dispatchable component is enforced as a fixed
+    # dispatch, which would freeze it and inflate the reference
+    clean_dispatch_setpoints(reference)
     reference.optimize(solver_name="highs")
     expected = float(reference.objective + reference.objective_constant)
 
