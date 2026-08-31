@@ -1572,9 +1572,11 @@ class Transformation:
                 else:
                     self.convert_to_tssb(master, index_id=0,
                                          name_id="InnerBlock")
+                    # the investment is stated above: inside the scenarios
+                    # there is the deterministic model alone
                     self.add_deterministic_model(
                         master.blocks["InnerBlock"].blocks["StochasticBlock"],
-                        0, inside_stochastic=True)
+                        0, inside_stochastic=True, with_investment=False)
 
                 self.sms_network = sn
                 return sn
@@ -1601,13 +1603,19 @@ class Transformation:
         self.sms_network = sn
         return sn
     
-    def add_deterministic_model(self, master, index_id=0, inside_stochastic=False):
+    def add_deterministic_model(self, master, index_id=0,
+                                inside_stochastic=False, with_investment=True):
         """
         Add the deterministic model, i.e. the optional InvestmentBlock and the
         UCBlock inside it, to master. This is what every scenario sees, and
         it is therefore built once per inner Block of a multi-stage problem.
+
+        With with_investment false the InvestmentBlock is left out: this is
+        what the scenarios of the "Benders form" look like, the investment
+        having been taken out of them and stated once, above.
         """
-        if self.problem_structure.get("has_investment_block", False):
+        if with_investment and self.problem_structure.get("has_investment_block",
+                                                          False):
             name_id = "InvestmentBlock"
             self.convert_to_investmentblock(master, index_id, name_id)
     
@@ -1627,8 +1635,13 @@ class Transformation:
         Structure:
         TwoStageStochasticBlock
         ├── DiscreteScenarioSet
-        ├── StaticAbstractPath
+        ├── StaticAbstractPath      (only if it has first-stage variables)
         └── StochasticBlock
+
+        With the investment stated above, in an InvestmentBlock wrapping this
+        Block, the scenarios hold no here-and-now variable at all: there is
+        then nothing for the StaticAbstractPath to address and nothing for
+        the non-anticipativity Constraint to tie, so the path is left out.
         """
         dims = self.dimensions["tssb"]["dss"]
         number_scenarios = dims["NumberScenarios"]
@@ -1643,7 +1656,9 @@ class Transformation:
         tssb_block = master.blocks[name_id]
     
         self.convert_to_discrete_scenario_set(tssb_block, "DiscreteScenarioSet")
-        self.convert_to_static_abstract_path(tssb_block, "StaticAbstractPath")
+        if not self.problem_structure.get("investment_outside", False):
+            self.convert_to_static_abstract_path(tssb_block,
+                                                 "StaticAbstractPath")
         self.convert_to_stochastic_block(tssb_block, "StochasticBlock")
     
         return master
@@ -1678,7 +1693,9 @@ class Transformation:
         mssb_block = master.blocks[name_id]
 
         self.convert_to_scenario_tree(mssb_block, "ScenarioGenerator")
-        self.convert_to_static_abstract_path(mssb_block, "StaticAbstractPath")
+        if not self.problem_structure.get("investment_outside", False):
+            self.convert_to_static_abstract_path(mssb_block,
+                                                 "StaticAbstractPath")
 
         for index, group in enumerate(groups):
             inner_id = f"Block_{index}"
@@ -1694,10 +1711,18 @@ class Transformation:
 
             inner_block = mssb_block.blocks[inner_id]
 
-            self.convert_to_static_abstract_path(inner_block, "StaticAbstractPath")
+            if not self.problem_structure.get("investment_outside", False):
+                self.convert_to_static_abstract_path(inner_block,
+                                                     "StaticAbstractPath")
             self.convert_to_stochastic_block(inner_block, "StochasticBlock")
+            # with the investment stated above, in an InvestmentBlock
+            # wrapping this one, the scenarios hold the deterministic model
+            # alone [see add_deterministic_model()]
             self.add_deterministic_model(
-                inner_block.blocks["StochasticBlock"], 0, inside_stochastic=True
+                inner_block.blocks["StochasticBlock"], 0,
+                inside_stochastic=True,
+                with_investment=not self.problem_structure.get(
+                    "investment_outside", False),
             )
 
         return master
