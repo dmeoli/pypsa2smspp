@@ -291,6 +291,13 @@ def _normalize_stochastic_parameters(
         "parameters": ["demand", "renewable_maxpower"],
         "tree": {"groups": {...}}
     }
+
+    "investment_outside" states the investment decision once, in an
+    InvestmentBlock wrapping the whole stochastic Block, instead of
+    replicating it in every scenario and tying the copies with the
+    non-anticipativity Constraint of the extensive form. The two are the same
+    problem written the other way round, the second one being what a Benders
+    decomposition of it wants to see.
     """
     sp = dict(stochastic_parameters or {})
 
@@ -321,6 +328,7 @@ def _normalize_stochastic_parameters(
         "scenario_tree": normalize_scenario_tree(
             sp.get("tree", sp.get("scenario_tree", None))
         ),
+        "investment_outside": bool( sp.get("investment_outside", False) ),
     }
 
 
@@ -349,6 +357,8 @@ def describe_problem_structure(
         "stochastic_parameters": stochastic_parameters_list,
         "stochastic_parameter_set": stochastic_parameter_set,
         "scenario_tree": sp["scenario_tree"] if is_stochastic else None,
+        "investment_outside": sp["investment_outside"] if is_stochastic
+                              else False,
     }
 
 

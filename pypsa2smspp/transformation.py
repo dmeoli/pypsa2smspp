@@ -1557,6 +1557,28 @@ class Transformation:
                     f"Unsupported stochastic_type in convert_to_blocks: {stochastic_type!r}"
                 )
     
+            # the "Benders form": the investment decision is taken out of the
+            # scenarios and stated once, in an InvestmentBlock wrapping the
+            # whole stochastic Block, rather than replicated in each scenario
+            # and tied by the non-anticipativity Constraint of the extensive
+            # form. The two are the same problem, stated the other way round
+            if self.problem_structure.get("investment_outside", False):
+                self.convert_to_investmentblock(master, 0, "Block_0")
+                master = sn.blocks["Block_0"]
+                index_id = 0
+
+                if stochastic_type == "mssb":
+                    self.convert_to_mssb(master, name_id="InnerBlock")
+                else:
+                    self.convert_to_tssb(master, index_id=0,
+                                         name_id="InnerBlock")
+                    self.add_deterministic_model(
+                        master.blocks["InnerBlock"].blocks["StochasticBlock"],
+                        0, inside_stochastic=True)
+
+                self.sms_network = sn
+                return sn
+
             if stochastic_type == "mssb":
                 # the multi-stage block builds its own inner blocks, one per
                 # outer-stage scenario, each with the deterministic model in it
@@ -2190,9 +2212,16 @@ class Transformation:
                     f"Unsupported stochastic_type in optimize: {stochastic_type!r}"
                 )
     
-            block_type = ("MultiStageStochasticBlock" if stochastic_type == "mssb"
-                          else "TwoStageStochasticBlock")
-            inner_block_name = "Block_0"
+            if self.problem_structure.get("investment_outside", False):
+                # the stochastic Block is wrapped by an InvestmentBlock, which
+                # is therefore the one the Solver is attached to
+                block_type = "InvestmentBlock"
+                inner_block_name = "Block_0"
+            else:
+                block_type = ("MultiStageStochasticBlock"
+                              if stochastic_type == "mssb"
+                              else "TwoStageStochasticBlock")
+                inner_block_name = "Block_0"
     
         elif self.problem_structure.get("has_investment_block", False):
             block_type = "InvestmentBlock"
@@ -2321,6 +2350,16 @@ class Transformation:
                 raise ValueError(
                     f"Unsupported stochastic type: "
                     f"{self.problem_structure['stochastic_type']!r}"
+                )
+
+            if ( self.problem_structure.get("investment_outside", False)
+                 and not self.problem_structure.get("has_investment_block",
+                                                    False) ):
+                raise ValueError(
+                    "'investment_outside' states the investment in an "
+                    "InvestmentBlock wrapping the stochastic Block, hence it "
+                    "needs the investment to go through an InvestmentBlock: "
+                    "set capacity_expansion_ucblock=False."
                 )
 
             if self.problem_structure["stochastic_type"] == "mssb":

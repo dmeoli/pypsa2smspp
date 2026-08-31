@@ -284,6 +284,65 @@ def test_mssb_block_structure():
 
 
 # ---------------------------------------------------------------------------
+# where the investment is stated
+# ---------------------------------------------------------------------------
+
+def test_investment_outside_wraps_the_stochastic_block():
+    """
+    With investment_outside the investment is stated once, in an
+    InvestmentBlock wrapping the stochastic Block, instead of being replicated
+    in every scenario.
+    """
+    n, tree = build_two_level_network()
+
+    transformation = Transformation(
+        name="mssb_investment_outside",
+        configfile=MSSB_CONFIGFILE,
+        enable_thermal_units=False,
+        capacity_expansion_ucblock=False,
+        workdir=str(OUT_TEST / "mssb" / "investment_outside"),
+        stochastic_parameters={
+            "stochastic_type": "mssb",
+            "parameters": STOCHASTIC_PARAMETERS,
+            "tree": tree,
+            "investment_outside": True,
+        },
+        overwrite=True,
+        fp_temp="smspp_{name}_temp.nc",
+    )
+    transformation.create_model(n, verbose=False)
+
+    root = transformation.sms_network.blocks["Block_0"]
+    assert root.attributes["type"] == "InvestmentBlock"
+
+    inner = root.blocks["InnerBlock"]
+    assert inner.attributes["type"] == "MultiStageStochasticBlock"
+    assert "ScenarioGenerator" in inner.blocks
+
+
+def test_investment_outside_needs_an_investment_block():
+    """It is refused when the investment goes through the UCBlock instead."""
+    n, tree = build_two_level_network()
+
+    transformation = Transformation(
+        name="mssb_investment_outside_refused",
+        configfile=MSSB_CONFIGFILE,
+        enable_thermal_units=False,
+        workdir=str(OUT_TEST / "mssb" / "investment_outside_refused"),
+        stochastic_parameters={
+            "stochastic_type": "mssb",
+            "parameters": STOCHASTIC_PARAMETERS,
+            "tree": tree,
+            "investment_outside": True,
+        },
+        overwrite=True,
+    )
+
+    with pytest.raises(ValueError, match="capacity_expansion_ucblock"):
+        transformation.consistency_check(n)
+
+
+# ---------------------------------------------------------------------------
 # the optimum
 # ---------------------------------------------------------------------------
 

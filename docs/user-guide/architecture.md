@@ -96,6 +96,29 @@ of different branches may well hold different values *and* different
 probabilities, which is precisely what a `TwoStageStochasticBlock` over the
 same leaves cannot say.
 
+### Where the investment decision is stated
+
+An investment decision taken before the uncertainty is revealed can be stated
+in either of two ways, which describe the same problem. By default it is
+replicated in every scenario, with the copies tied by the non-anticipativity
+`Constraint` of the extensive form. With `investment_outside` it is instead
+stated once, in an `InvestmentBlock` wrapping the whole stochastic `Block`:
+
+```python
+stochastic_parameters={
+    "stochastic_type": "tssb",
+    "parameters": ["demand"],
+    "investment_outside": True,
+}
+```
+
+which gives `SMSNetwork -> InvestmentBlock -> InnerBlock`, the latter being
+the `TwoStageStochasticBlock` (or the `MultiStageStochasticBlock`) with the
+scenarios below it. This is the arrangement a Benders decomposition of the
+problem wants to see, the first-stage variables being the ones of the master.
+It needs the investment to go through an `InvestmentBlock`, i.e.
+`capacity_expansion_ucblock=False`.
+
 Inside the `UCBlock`, pypsa2smspp adds:
 
 - unit blocks for PyPSA components, such as `IntermittentUnitBlock`, `ThermalUnitBlock`, `BatteryUnitBlock`, `HydroUnitBlock`, and `SlackUnitBlock`;
