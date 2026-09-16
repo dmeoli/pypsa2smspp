@@ -53,7 +53,7 @@ class TransformationConfig:
             "LinearTerm": lambda marginal_cost: marginal_cost,
             "ConstTerm": lambda stand_by_cost, p_nom, p_nom_extendable: stand_by_cost.where(~p_nom_extendable, stand_by_cost / p_nom.where(p_nom != 0, 1.0)),
             "StartUpCost": lambda start_up_cost, p_nom, p_nom_extendable: start_up_cost.where(~p_nom_extendable, start_up_cost / p_nom.where(p_nom != 0, 1.0)),
-            "InitialPower": lambda p_nom, up_time_before, p_nom_extendable: p_nom.where(~p_nom_extendable, 1.0) if up_time_before.values[0] > 0 else 0,
+            "InitialPower": lambda p_nom, p_init, up_time_before, p_nom_extendable: (p_nom if p_init is None else p_init.fillna(p_nom)).where(~p_nom_extendable, 1.0) if up_time_before.values[0] > 0 else 0,
             "FixedConsumption": 0.0, # How much the component consumes if off
             "InertiaCommitment": 1.0,
             "StartUpLimit": lambda ramp_limit_start_up, p_nom, p_nom_extendable: ramp_limit_start_up.where(p_nom_extendable, ramp_limit_start_up * p_nom).fillna(p_nom.where(~p_nom_extendable, 1.0)),
