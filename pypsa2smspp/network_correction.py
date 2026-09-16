@@ -836,6 +836,8 @@ def split_traditional_generators_into_modules(
 
     # Remove original generators and their dynamic columns.
     net.generators = net.generators.drop(index=old_names_to_drop)
+    # the concatenation loses the name of the index, which PyPSA looks up
+    net.generators.index.name = "name"
 
     for attr, df in net.generators_t.items():
         cols_to_drop = [name for name in old_names_to_drop if name in df.columns]
