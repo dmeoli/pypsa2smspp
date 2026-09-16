@@ -21,6 +21,7 @@ from pypsa2smspp.constants import (
     conversion_dict,
     nominal_attrs,
     renewable_carriers,
+    nuclear_rules_default,
     STOCHASTIC_PARAMETER_REGISTRY,
 )
 
@@ -37,6 +38,7 @@ from pypsa2smspp.utils import (
     process_dcnetworkblock,
     get_block_name,
     parse_unitblock_parameters,
+    nuclear_rule_variables,
     determine_size_type,
     merge_lines_and_links,
     rename_links_to_lines,
@@ -124,6 +126,7 @@ class Transformation:
         capacity_expansion_ucblock: bool = True,
         enable_thermal_units: bool = False,
         intermittent_carriers: Optional[Union[str, Sequence[str]]] = None,
+        nuclear_units: Optional[Mapping[str, Union[bool, Mapping[str, Any]]]] = None,
 
         # --- I/O ---
         workdir: Union[str, Path] = "output",
@@ -194,6 +197,19 @@ class Transformation:
             Notes:
               - Ignored when `enable_thermal_units=False`.
 
+        nuclear_units : Mapping[str, bool | Mapping[str, Any]], optional
+            Carriers (case-insensitive) whose thermal generators become
+            NuclearUnitBlocks, i.e., ThermalUnitBlocks subject to the operating
+            rules of a load-following nuclear unit. Each carrier maps to True,
+            which applies `constants.nuclear_rules_default`, or to a mapping
+            that overrides some of those rules (a rule set to None is not
+            emitted). Durations are in hours and require a uniform snapshot
+            weighting. PyPSA has no such rules, hence its optimum is a
+            relaxation of the SMS++ one.
+
+            Notes:
+              - Ignored when `enable_thermal_units=False`.
+
         workdir : str | Path, default "output"
             Output directory for SMS++ artifacts. The directory is created if it does not exist.
 
@@ -245,6 +261,20 @@ class Transformation:
         self.enable_thermal_units = bool(enable_thermal_units)
         
         self.intermittent_carriers = intermittent_carriers
+        self.nuclear_units = {}
+        for carrier, rules in (nuclear_units or {}).items():
+            if rules is False:
+                continue
+            merged = dict(nuclear_rules_default)
+            if isinstance(rules, Mapping):
+                unknown = set(rules) - set(nuclear_rules_default)
+                if unknown:
+                    raise ValueError(
+                        f"Unknown nuclear rules for carrier {carrier!r}: "
+                        f"{sorted(unknown)}"
+                    )
+                merged.update(rules)
+            self.nuclear_units[str(carrier).strip().lower()] = merged
 
         self.workdir = Path(workdir)
         self.name = str(name)
@@ -357,6 +387,8 @@ class Transformation:
             data for each UnitBlock type (or lines).
         """
         self.smspp_parameters = pd.read_excel(fp, sheet_name=None, index_col=0)
+        # the thermal part of a NuclearUnitBlock has the thermal sizes and types
+        self.smspp_parameters["NuclearUnitBlock"] = self.smspp_parameters["ThermalUnitBlock"]
     
  
     ### 2 ###          
@@ -643,6 +675,7 @@ class Transformation:
                     enable_thermal_units=self.enable_thermal_units,
                     intermittent_carriers=self.intermittent_carriers,
                     default_intermittent=renewable_carriers,
+                    nuclear_carriers=list(self.nuclear_units),
                 )
 
                 # UCBlock cannot expand a thermal unit: its commitment u_t is a
@@ -652,7 +685,8 @@ class Transformation:
                 # variable, silently corrupting the model.
                 if (
                     self.capacity_expansion_ucblock
-                    and attr_name == "ThermalUnitBlock_parameters"
+                    and attr_name in ("ThermalUnitBlock_parameters",
+                                      "NuclearUnitBlock_parameters")
                     and is_extendable(components_df.loc[[component]],
                                       components.name, nominal_attrs)
                 ):
@@ -805,6 +839,16 @@ class Transformation:
             component
         )
         
+        dimensions = None
+        if attr_name == "NuclearUnitBlock_parameters":
+            carrier = str(components_df["carrier"].iloc[0]).strip().lower()
+            rule_variables, dimensions = nuclear_rule_variables(
+                self.nuclear_units[carrier],
+                converted_dict,
+                self._uniform_snapshot_hours(n),
+            )
+            converted_dict.update(rule_variables)
+
         name = get_block_name(attr_name, index, components_df)
         
         if attr_name in ['Lines_parameters', 'Links_parameters']:
@@ -820,6 +864,8 @@ class Transformation:
             )
         
             self.unitblocks[name] = {"name": components_df.index[0],"enumerate": f"UnitBlock_{index}" ,"block": attr_name.split("_")[0], design_key: components_df[nom].values, "Extendable":ext, "variables": converted_dict}
+            if dimensions:
+                self.unitblocks[name]["dimensions"] = dimensions
         
         if attr_name == 'HydroUnitBlock_parameters':
             dimensions = self.dimensions['HydroUnitBlock']
@@ -827,6 +873,20 @@ class Transformation:
             
             self.unitblocks[name]['dimensions'] = dimensions
         
+    @staticmethod
+    def _uniform_snapshot_hours(n):
+        """
+        Returns the duration of a snapshot in hours, which the durations of the
+        nuclear rules are divided by; the weighting must be uniform.
+        """
+        weights = n.snapshot_weightings["generators"].to_numpy(dtype=float)
+        if weights.size == 0 or not np.allclose(weights, weights[0]):
+            raise ValueError(
+                "The nuclear rules need a uniform snapshot weighting, "
+                "their durations being given in hours."
+            )
+        return float(weights[0])
+
     ### 6 ###
     def add_demand(self, n):
         """
@@ -2156,14 +2216,24 @@ class Transformation:
             # Add also any special dimensions
             if "dimensions" in unit_block:
                 for dim_name, dim_value in unit_block["dimensions"].items():
-                    ub_kwargs[dim_name] = dim_value
+                    # without a table pySMSpp would take an int for an Attribute
+                    ub_kwargs[dim_name] = (
+                        Dimension(dim_name, dim_value)
+                        if unit_block["block"] == "NuclearUnitBlock"
+                        else dim_value
+                    )
     
-            # Create Block
-            unit_block_obj = Block().from_kwargs(
-                block_type=unit_block["block"],
-                name=unit_block["name"],
-                **ub_kwargs,
-            )
+            # Create Block (pySMSpp has no table for NuclearUnitBlock and
+            # infers the kinds from the values, which is what we want)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", message="Block type NuclearUnitBlock not found"
+                )
+                unit_block_obj = Block().from_kwargs(
+                    block_type=unit_block["block"],
+                    name=unit_block["name"],
+                    **ub_kwargs,
+                )
     
             # Attach to UCBlock
             master.blocks[name_id].add_block(
@@ -2664,7 +2734,7 @@ class Transformation:
                 }
             )
 
-        elif block_type == "ThermalUnitBlock":
+        elif block_type in ("ThermalUnitBlock", "NuclearUnitBlock"):
             self.unitblock_design_data.append(
                 {
                     "block_index": unitblock_index,

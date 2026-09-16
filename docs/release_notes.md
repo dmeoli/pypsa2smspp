@@ -7,6 +7,7 @@
 * Support snapshot_weightings != 1 [PR #47](https://github.com/SPSUnipi/pypsa2smspp/pull/47)
 * Emit a MultiStageStochasticBlock from a two-level scenario tree
 * State the investment once, outside the scenarios, in an InvestmentBlock wrapping the stochastic Block (`investment_outside`)
+* Translate the thermal generators of chosen carriers into NuclearUnitBlocks with the operating rules of a load-following nuclear unit (`nuclear_units`, off by default)
 
 ### Minor Changes and Bug Fixes
 

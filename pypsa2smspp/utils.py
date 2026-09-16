@@ -542,6 +542,7 @@ def get_attr_name(
     enable_thermal_units: bool = False,
     intermittent_carriers: Optional[Union[str, Sequence[str]]] = None,
     default_intermittent: Sequence[str] = (),
+    nuclear_carriers: Optional[Union[str, Sequence[str]]] = None,
 ) -> str:
     """
     Maps a PyPSA component type and its carrier to the corresponding
@@ -553,6 +554,7 @@ def get_attr_name(
       - else:
           intermittent set = intermittent_carriers if provided else default_intermittent
           carrier in intermittent set -> IntermittentUnitBlock_parameters
+          carrier in nuclear_carriers -> NuclearUnitBlock_parameters
           otherwise -> ThermalUnitBlock_parameters
     """
     c = carrier.lower() if carrier else None
@@ -574,6 +576,13 @@ def get_attr_name(
 
         if c is not None and c in intermittent_set:
             return "IntermittentUnitBlock_parameters"
+
+        if (
+            c is not None
+            and nuclear_carriers is not None
+            and c in _normalize_carrier_list(nuclear_carriers)
+        ):
+            return "NuclearUnitBlock_parameters"
 
         return "ThermalUnitBlock_parameters"
 
@@ -1825,6 +1834,108 @@ def get_block_name(attr_name, index, components_df):
         return f"{attr_name.split('_')[0]}_{index}"
     
     
+def nuclear_rule_variables(rules, thermal_variables, snapshot_hours):
+    """
+    Computes the variables that turn a ThermalUnitBlock into a NuclearUnitBlock.
+
+    Parameters
+    ----------
+    rules : dict
+        Operating rules, with the keys and the meaning of
+        `constants.nuclear_rules_default`; a rule set to None is not emitted.
+    thermal_variables : dict
+        The converted ThermalUnitBlock variables of the unit ("MinPower",
+        "MaxPower", "DeltaRampUp", "DeltaRampDown"), as returned by
+        `parse_unitblock_parameters`.
+    snapshot_hours : float
+        The duration of a snapshot in hours, used to turn the durations of the
+        rules into numbers of snapshots.
+
+    Returns
+    -------
+    variables : dict
+        Variable name -> {"value", "type", "size"}.
+    dimensions : dict
+        The dimensions the variables need ("NumberPowerBands").
+    """
+    def periods(hours, minimum):
+        return max(minimum, int(round(float(hours) / snapshot_hours)))
+
+    def as_array(name):
+        return np.asarray(thermal_variables[name]["value"], dtype=float).ravel()
+
+    def scalar(value, var_type):
+        return {"value": value, "type": var_type, "size": ()}
+
+    variables = {}
+    dimensions = {}
+
+    p_min = float(as_array("MinPower").min())
+    p_max = float(as_array("MaxPower").max())
+    width = p_max - p_min
+
+    modulation_time = periods(rules["modulation_time"], 2)
+    variables["ModulationTime"] = scalar(modulation_time, "uint")
+    variables["InitModulation"] = scalar(modulation_time, "uint")
+
+    fraction = rules.get("modulation_ramp_fraction")
+    if fraction:
+        for key, ramp in (("ModulationDeltaRampUp", "DeltaRampUp"),
+                          ("ModulationDeltaRampDown", "DeltaRampDown")):
+            value = fraction * as_array(ramp)
+            if value.size == 1:
+                variables[key] = scalar(float(value[0]), "float")
+            else:
+                variables[key] = {"value": value, "type": "float",
+                                  "size": ("TimeHorizon",)}
+
+    if rules.get("max_modulation_length") is not None:
+        length = periods(rules["max_modulation_length"], 1)
+        if length > 1:
+            variables["MaxModulationLength"] = scalar(length, "uint")
+
+    if rules.get("stability_after_start_up"):
+        variables["StabilityAfterStartUp"] = scalar(
+            periods(rules["stability_after_start_up"], 1), "uint")
+
+    if rules.get("day_length"):
+        variables["DayLength"] = scalar(periods(rules["day_length"], 1), "uint")
+
+    for key, rule in (("ModulationsPerDay", "modulations_per_day"),
+                      ("StartUpsPerDay", "start_ups_per_day")):
+        if rules.get(rule) is not None:
+            variables[key] = scalar(int(rules[rule]), "uint")
+
+    bands = rules.get("power_bands")
+    if bands and width > 0:
+        dimensions["NumberPowerBands"] = 2
+        variables["PowerBands"] = {
+            "value": np.array([p_min + bands * width, p_max - bands * width]),
+            "type": "float",
+            "size": ("NumberPowerBands",),
+        }
+
+    if (rules.get("deep_decrease_threshold") is not None
+            and rules.get("deep_decrease_gradient") is not None):
+        variables["DeepDecreaseThreshold"] = scalar(
+            p_min + rules["deep_decrease_threshold"] * width, "float")
+        variables["DeepDecreaseGradient"] = scalar(
+            rules["deep_decrease_gradient"] * float(as_array("DeltaRampDown").min()),
+            "float")
+        if rules.get("deep_decreases_per_day") is not None:
+            variables["DeepDecreasesPerDay"] = scalar(
+                int(rules["deep_decreases_per_day"]), "uint")
+        if rules.get("deep_decrease_cost"):
+            variables["DeepDecreaseCost"] = scalar(
+                float(rules["deep_decrease_cost"]), "float")
+
+    if rules.get("down_modulation_cost"):
+        variables["DownModulationCost"] = scalar(
+            float(rules["down_modulation_cost"]), "float")
+
+    return variables, dimensions
+
+
 def determine_size_type(
     smspp_parameters,
     dimensions,

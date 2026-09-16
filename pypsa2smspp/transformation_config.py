@@ -60,6 +60,10 @@ class TransformationConfig:
             "ShutDownLimit": lambda ramp_limit_shut_down, p_nom, p_nom_extendable: ramp_limit_shut_down.where(p_nom_extendable, ramp_limit_shut_down * p_nom).fillna(p_nom.where(~p_nom_extendable, 1.0)),
         }
 
+        # the thermal part of a NuclearUnitBlock; its operating rules are added
+        # by Transformation, since they come from the options and not from PyPSA
+        self.NuclearUnitBlock_parameters = self.ThermalUnitBlock_parameters
+
         self.BatteryUnitBlock_parameters = {
             # "Kappa": 1.0,
             "MaxPower": lambda p_nom, p_max_pu, p_nom_extendable, capital_cost, p_nom_max: (p_nom * p_max_pu).where(~p_nom_extendable, p_max_pu.where(capital_cost != 0, (p_nom_max * p_max_pu).where(~((p_max_pu == 0) & np.isinf(p_nom_max)), 0.0))),
@@ -179,6 +183,8 @@ class TransformationConfig:
             "p": lambda activepower, designvariable, extendable: activepower * designvariable if extendable else activepower,
             }
         
+        self.NuclearUnitBlock_inverse = self.ThermalUnitBlock_inverse
+
         self.HydroUnitBlock_inverse = {
             "p_nom": lambda designvariable: designvariable,
             "p_dispatch": lambda activepower: activepower[0],

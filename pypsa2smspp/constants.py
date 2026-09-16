@@ -148,3 +148,32 @@ STOCHASTIC_PARAMETER_REGISTRY = {
         "weights": False,
     },
 }
+
+# Default operating rules of a load-following nuclear unit, used by the
+# `nuclear_units` option of Transformation for every carrier mapped to True.
+# Durations are in hours and are converted to snapshots with the (uniform)
+# snapshot weighting; fractions refer to the power range [MinPower, MaxPower]
+# or to the ramp limits of the unit. A rule set to None is not emitted.
+nuclear_rules_default = {
+    # share of the thermal ramps allowed outside a modulation
+    "modulation_ramp_fraction": 0.0,
+    # at most one modulation within this window (ModulationTime)
+    "modulation_time": 2.0,
+    # longest modulation (MaxModulationLength)
+    "max_modulation_length": 2.0,
+    # length of the day on which the daily limits are counted (DayLength)
+    "day_length": 24.0,
+    "modulations_per_day": 2,
+    "start_ups_per_day": 1,
+    # instants after a start-up in which no modulation begins
+    "stability_after_start_up": 1.0,
+    # breakpoints of the three power bands, as a fraction of the range
+    "power_bands": 0.3,
+    # deep decreases: threshold as a fraction of the range, gradient as a
+    # fraction of the ramp-down limit
+    "deep_decrease_threshold": 0.4,
+    "deep_decrease_gradient": 0.8,
+    "deep_decreases_per_day": 1,
+    "deep_decrease_cost": 20.0,
+    "down_modulation_cost": 2.0,
+}

@@ -999,7 +999,7 @@ def parse_txt_file(file_path):
                 data['elapsed_time'] = elapsed_time
                 continue 
             
-            block_match = re.search(r"(ThermalUnitBlock|BatteryUnitBlock|IntermittentUnitBlock|HydroUnitBlock|DCNetworkBlock)\s*(\d*)", line)
+            block_match = re.search(r"(ThermalUnitBlock|NuclearUnitBlock|BatteryUnitBlock|IntermittentUnitBlock|HydroUnitBlock|DCNetworkBlock)\s*(\d*)", line)
             if block_match:
                 base_block = block_match.group(1)
                 block_number = block_match.group(2) or "0"  # Se non c'è numero, usa "0"
