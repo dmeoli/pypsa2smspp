@@ -1834,6 +1834,47 @@ def get_block_name(attr_name, index, components_df):
         return f"{attr_name.split('_')[0]}_{index}"
     
     
+def forbid_unreachable_switches(thermal_variables, time_horizon):
+    """
+    Translates the start-up and shut-down limits below the minimum power.
+
+    PyPSA bounds the output of a starting unit by its start-up limit and that
+    of the last instant before a shut-down by its shut-down limit, while the
+    output of a unit on is at least its minimum power: with a limit below the
+    minimum power the unit can never start up (or shut down). A
+    ThermalUnitBlock rejects such limits, so they are raised to the minimum
+    power and the switch is forbidden by a minimum down (or up) time that
+    covers the horizon together with the instants the unit has already been
+    down (or up) before it, which gives the same set of schedules.
+
+    Parameters
+    ----------
+    thermal_variables : dict
+        The converted ThermalUnitBlock variables of the unit, modified in place.
+    time_horizon : int
+        The number of instants of the horizon.
+    """
+    if "MinPower" not in thermal_variables:
+        return
+
+    min_power = np.asarray(thermal_variables["MinPower"]["value"], dtype=float)
+    init = int(np.asarray(thermal_variables["InitUpDownTime"]["value"]).ravel()[0])
+
+    for limit, time, before in (("StartUpLimit", "MinDownTime", max(-init, 0)),
+                                ("ShutDownLimit", "MinUpTime", max(init, 0))):
+        if limit not in thermal_variables:
+            continue
+        value = np.asarray(thermal_variables[limit]["value"], dtype=float)
+        if not np.any(value < min_power - 1e-9 * np.maximum(1.0, np.abs(min_power))):
+            continue
+        raised = np.maximum(value, min_power)
+        original = thermal_variables[limit]["value"]
+        thermal_variables[limit]["value"] = (
+            float(raised.ravel()[0]) if np.isscalar(original) else
+            raised.reshape(np.shape(original)))
+        thermal_variables[time]["value"] = int(time_horizon) + before
+
+
 def nuclear_rule_variables(rules, thermal_variables, snapshot_hours):
     """
     Computes the variables that turn a ThermalUnitBlock into a NuclearUnitBlock.

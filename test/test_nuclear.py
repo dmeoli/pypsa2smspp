@@ -24,6 +24,7 @@ from conftest import safe_remove, REL_TOL, ABS_TOL, OUT_TEST
 
 from pypsa2smspp.constants import nuclear_rules_default
 from pypsa2smspp.transformation import Transformation
+from pypsa2smspp.utils import forbid_unreachable_switches
 
 
 # the rules of nuclear_rules_default switched off, the modulation ramps being
@@ -141,6 +142,24 @@ def test_nuclear_unknown_rule():
     with pytest.raises(ValueError, match="Unknown nuclear rules"):
         Transformation(enable_thermal_units=True,
                        nuclear_units={"nuclear": {"modulation_per_day": 2}})
+
+
+def test_unreachable_switches():
+    # a unit down for 3 instants whose start-up limit is below its minimum
+    # power cannot start up in a horizon of 24 instants; its shut-down limit is
+    # above the minimum power and nothing changes on that side
+    variables = {"MinPower": {"value": np.array([500.0])},
+                 "StartUpLimit": {"value": 200.0},
+                 "ShutDownLimit": {"value": 600.0},
+                 "InitUpDownTime": {"value": -3},
+                 "MinDownTime": {"value": 1},
+                 "MinUpTime": {"value": 1}}
+    forbid_unreachable_switches(variables, 24)
+
+    assert variables["StartUpLimit"]["value"] == 500.0
+    assert variables["MinDownTime"]["value"] == 27
+    assert variables["ShutDownLimit"]["value"] == 600.0
+    assert variables["MinUpTime"]["value"] == 1
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ from pypsa2smspp.utils import (
     get_block_name,
     parse_unitblock_parameters,
     nuclear_rule_variables,
+    forbid_unreachable_switches,
     determine_size_type,
     merge_lines_and_links,
     rename_links_to_lines,
@@ -840,6 +841,9 @@ class Transformation:
         )
         
         dimensions = None
+        if attr_name in ("ThermalUnitBlock_parameters",
+                         "NuclearUnitBlock_parameters"):
+            forbid_unreachable_switches(converted_dict, len(n.snapshots))
         if attr_name == "NuclearUnitBlock_parameters":
             carrier = str(components_df["carrier"].iloc[0]).strip().lower()
             rule_variables, dimensions = nuclear_rule_variables(
