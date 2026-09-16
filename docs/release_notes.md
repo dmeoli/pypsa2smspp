@@ -14,6 +14,9 @@
 * Fix x_network here-and-now path to index design position, not line id [PR #48](https://github.com/SPSUnipi/pypsa2smspp/pull/48)
 * Drop p_set for dispatchable components [PR #52] (https://github.com/SPSUnipi/pypsa2smspp/pull/52)
 * Correct snapshot_weightings for InvestmentBlock [PR #49] (https://github.com/SPSUnipi/pypsa2smspp/pull/49)
+* Start the ramps of a committable unit from `p_init` when it is given, as PyPSA does
+* Forbid by a minimum down (or up) time the switches that a start-up (or shut-down) limit below the minimum power makes unreachable, instead of writing limits that a ThermalUnitBlock rejects
+* Keep the index name of the generators split into modules by `split_traditional_generators_into_modules`
 
 
 ## v0.0.5
