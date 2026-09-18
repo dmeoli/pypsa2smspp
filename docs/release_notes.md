@@ -14,7 +14,11 @@
 * Fix x_network here-and-now path to index design position, not line id [PR #48](https://github.com/SPSUnipi/pypsa2smspp/pull/48)
 * Drop p_set for dispatchable components [PR #52] (https://github.com/SPSUnipi/pypsa2smspp/pull/52)
 * Correct snapshot_weightings for InvestmentBlock [PR #49] (https://github.com/SPSUnipi/pypsa2smspp/pull/49)
-* Start the ramps of a committable unit from `p_init` when it is given, as PyPSA does
+* Start the ramps of a committable unit from `p_init` when it is given, as PyPSA does, and leave the first instant free when it is not (PyPSA drops that row, a ThermalUnitBlock always ramps from its initial power)
+* Translate `shut_down_cost` into the `ShutDownCost` of the `ThermalUnitBlock`, which the conversion used to drop silently
+* Keep a generator that PyPSA does not commit on at every snapshot, instead of giving it a unit commitment, which relaxed its minimum power and its ramps
+* Refuse a thermal generator with a bound on the energy of the whole horizon (`e_sum_min` / `e_sum_max`) or with modules of its capacity (`p_nom_mod`), which a `ThermalUnitBlock` cannot express, instead of writing it without them
+* Read the solution back with a recent xarray, which refuses to build a Dataset out of a Dataset
 * Forbid by a minimum down (or up) time the switches that a start-up (or shut-down) limit below the minimum power makes unreachable, instead of writing limits that a ThermalUnitBlock rejects
 * Keep the index name of the generators split into modules by `split_traditional_generators_into_modules`
 

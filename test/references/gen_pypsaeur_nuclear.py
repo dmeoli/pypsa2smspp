@@ -11,9 +11,7 @@ optimum is computed once; then the network is translated three times:
   ramps outside the modulations and no other rule), i.e., the same problem;
 - `nub-rules`: they are NuclearUnitBlocks with `nuclear_rules_default`.
 
-The initial power of the committable units is set (`p_init`), since a
-ThermalUnitBlock always ramps from one and PyPSA does only when it is given,
-and the inflow of the hydro units is cut at their largest outflow, since a
+The inflow of the hydro units is cut at their largest outflow, since a
 HydroUnitBlock cannot spill.
 The first two must match the PyPSA objective; the third can only be above it,
 since PyPSA has no such rules. For each variant it writes
@@ -78,15 +76,6 @@ def prepare(args):
         n_modules={"nuclear": args.max_modules},
         verbose=False,
     )
-    # a ThermalUnitBlock ramps from a known initial power, PyPSA only when
-    # p_init is given: give it the output the unit may have at the start
-    # (after the split, which would copy it to every module)
-    committable = n.generators.index[n.generators.committable
-                                     & (n.generators.up_time_before > 0)]
-    p_max_pu = n.get_switchable_as_dense("Generator", "p_max_pu")
-    n.generators.loc[committable, "p_init"] = (
-        n.generators.loc[committable, "p_nom"]
-        * p_max_pu.iloc[0][committable].clip(upper=1.0))
     return n
 
 
