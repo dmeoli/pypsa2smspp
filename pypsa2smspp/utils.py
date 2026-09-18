@@ -16,6 +16,8 @@ across multiple components.
 They are typically imported and used within the Transformation class.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import re
@@ -1902,6 +1904,93 @@ def fix_commitment_on(thermal_variables, time_horizon):
     # a unit that is never off pays neither to start up nor to shut down
     for name in ("StartUpCost", "ShutDownCost"):
         thermal_variables.pop(name, None)
+
+
+# the BlockConfig that selects the KIRCHHOFF formulation of a DCNetworkBlock,
+# and the "meta" one that applies it to every such Block of the tree
+KIRCHHOFF_CONFIG = """# written by pypsa2smspp: the formulation of every DCNetworkBlock
+
+BlockConfig     # exact type of the Configuration object
+
+1   # the BlockConfig is a "differential" one
+
+2  # version of the BlockConfig format
+
+# the Configuration for the structure, i.e., the tree of sub-Block
+*  # [none]
+
+# static constraints Configuration
+*  # [none]
+
+# dynamic constraints Configuration
+*  # [none]
+
+# static variables Configuration
+# a SimpleConfiguration< int > selecting the network formulation
+SimpleConfiguration<int>
+2  # 0 = PTDF, 1 = CYCLE, 2 = KIRCHHOFF
+
+# dynamic variables Configuration
+*  # [none]
+
+# objective Configuration
+*  # [none]
+
+# is_feasible Configuration
+*  # [none]
+
+# is_optimal Configuration
+*  # [none]
+
+# solution Configuration
+*  # [none]
+
+# extra Configuration
+*  # [none]
+"""
+
+KIRCHHOFF_META = """# written by pypsa2smspp: a map from a Block classname to its BlockConfig
+
+SimpleConfiguration<std::map<std::string,Configuration*>>
+
+1 # the number of elements in the map
+
+DCNetworkBlock          *{path}
+"""
+
+
+def write_kirchhoff_config(directory, name):
+    """
+    Writes the BlockConfig that asks for Kirchhoff's voltage law.
+
+    A DCNetworkBlock whose lines have a susceptance is solved with the PTDF
+    formulation unless its BlockConfig says otherwise, and that formulation
+    disagrees with the KIRCHHOFF one on a network of AC lines and HVDC links
+    up to UCBlock 2b69e107. The conversion therefore writes, next to the
+    instance, the two files that select the KIRCHHOFF formulation, which is
+    the same model and is right in either case, and gives them to the solver.
+
+    Parameters
+    ----------
+    directory : Path
+        The directory the two files are written into.
+    name : str
+        The name of the instance, which prefixes them.
+
+    Returns
+    -------
+    str
+        The absolute path of the file to pass to the solver as its
+        BlockConfig; the other one it refers to by absolute path as well,
+        since the solver resolves a relative one against its own prefix.
+    """
+    block_config = (Path(directory) / f"{name}_DCNBCfg.txt").resolve()
+    block_config.write_text(KIRCHHOFF_CONFIG)
+
+    meta = (Path(directory) / f"{name}_InnerBCfg.txt").resolve()
+    meta.write_text(KIRCHHOFF_META.format(path=block_config))
+
+    return str(meta)
 
 
 def free_initial_ramp(thermal_variables, time_horizon):

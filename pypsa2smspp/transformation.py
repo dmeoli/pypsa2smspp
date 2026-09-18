@@ -41,6 +41,7 @@ from pypsa2smspp.utils import (
     nuclear_rule_variables,
     forbid_unreachable_switches,
     free_initial_ramp,
+    write_kirchhoff_config,
     fix_commitment_on,
     determine_size_type,
     merge_lines_and_links,
@@ -2371,6 +2372,13 @@ class Transformation:
 #############################################################################################
 
     
+    def _has_line_susceptance(self):
+        """True if any line of the network has a nonzero susceptance."""
+        lines = (self.networkblock or {}).get("Lines", {})
+        value = lines.get("variables", {}).get("LineSusceptance", {}).get("value")
+
+        return value is not None and bool(np.any(np.asarray(value, dtype=float)))
+
     def _optimize(self):
         """
         Optimize the already-built SMSNetwork.
@@ -2475,6 +2483,14 @@ class Transformation:
         # Solver options
         # --------------------------------------------------
         solver_options = dict(self.pysmspp_options or {})
+
+        # a network whose lines have a susceptance is solved with Kirchhoff's
+        # voltage law, the formulation the solver takes by default not being
+        # equivalent to it on a network of both kinds of lines up to UCBlock
+        # 2b69e107 [see write_kirchhoff_config()]; a BlockConfig of the caller
+        # is left alone
+        if "B" not in solver_options and self._has_line_susceptance():
+            solver_options["B"] = write_kirchhoff_config(workdir, self.name)
     
         # pySMSpp has no tool of its own for the multi-stage block: the command
         # line of mssb_solver is the one of tssb_solver, so the same wrapper
