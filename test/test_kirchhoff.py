@@ -2,13 +2,15 @@
 """
 Kirchhoff's voltage law, i.e., the susceptance of the lines.
 
-PyPSA bounds the flow of a `Line` by its reactance, and the conversion used to
-write a zero susceptance, which turns the AC network into a transport model.
-Here the susceptance written in the netCDF file is read back, and so is the
-BlockConfig the conversion writes next to the instance, which asks for the
-KIRCHHOFF formulation: the one the solver takes by default is not equivalent
-to it on a network of AC lines and HVDC links up to UCBlock 2b69e107. None of
-this needs SMS++; that the two objectives agree is checked in `test_ucblock.py`.
+PyPSA bounds the flow of a `Line` by its reactance, which the conversion writes
+as the susceptance of the network when it is asked to, i.e., with
+`kirchhoff_voltage_law`; with it off the AC network is a transport one, as it
+has always been. Here the susceptance written in the netCDF file is read back,
+and so is the BlockConfig the conversion writes next to the instance, which
+asks for the KIRCHHOFF formulation: the one the solver takes by default is not
+equivalent to it on a network of AC lines and HVDC links up to UCBlock
+2b69e107. None of this needs SMS++; that the two objectives agree is checked in
+`test_ucblock.py`.
 """
 from pathlib import Path
 
@@ -41,22 +43,33 @@ def two_bus_network() -> pypsa.Network:
     return n
 
 
-def test_susceptance_is_the_inverse_reactance():
-    temp_nc = OUT_TEST / "kirchhoff.nc"
+def susceptance(case_name, **options):
+    """The susceptances the conversion writes for the two-bus network."""
+    temp_nc = OUT_TEST / f"kirchhoff_{case_name}.nc"
     safe_remove(temp_nc)
 
     network = two_bus_network()
-    transformation = Transformation(capacity_expansion_ucblock=True)
+    transformation = Transformation(capacity_expansion_ucblock=True, **options)
     transformation.create_model(network, verbose=False)
     transformation.sms_network.to_netcdf(temp_nc, force=True)
 
     network.calculate_dependent_values()
     with nc.Dataset(temp_nc) as dataset:
-        susceptance = np.ravel(dataset["Block_0"]["LineSusceptance"][...])
+        return network, np.ravel(dataset["Block_0"]["LineSusceptance"][...])
+
+
+def test_susceptance_is_the_inverse_reactance():
+    network, values = susceptance("on", kirchhoff_voltage_law=True)
 
     # the line first, the link after it, the latter having no susceptance
-    assert susceptance[0] == 1.0 / network.lines.at["line", "x_pu_eff"]
-    assert susceptance[1] == 0.0
+    assert values[0] == 1.0 / network.lines.at["line", "x_pu_eff"]
+    assert values[1] == 0.0
+
+
+def test_the_network_is_a_transport_one_by_default():
+    _, values = susceptance("off")
+
+    assert not np.any(values)
 
 
 def test_the_block_config_asks_for_kirchhoff():

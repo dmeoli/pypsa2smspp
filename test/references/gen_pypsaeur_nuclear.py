@@ -12,7 +12,8 @@ optimum is computed once; then the network is translated three times:
 - `nub-rules`: they are NuclearUnitBlocks with `nuclear_rules_default`.
 
 The inflow of the hydro units is cut at their largest outflow, since a
-HydroUnitBlock cannot spill.
+HydroUnitBlock cannot spill, and the networks carry Kirchhoff's voltage law, as
+those of PyPSA do.
 The first two must match the PyPSA objective; the third can only be above it,
 since PyPSA has no such rules. For each variant it writes
 `<name>_<variant>.nc` (the SMS++ input) in `--outdir`, and a line per variant
@@ -115,6 +116,7 @@ def main():
         transformation = Transformation(
             capacity_expansion_ucblock=True,
             enable_thermal_units=True,
+            kirchhoff_voltage_law=True,
             nuclear_units=None if rules is None else {"nuclear": rules},
             workdir=args.outdir,
             name=f"{name}_{variant}",

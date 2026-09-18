@@ -131,6 +131,7 @@ class Transformation:
         enable_thermal_units: bool = False,
         intermittent_carriers: Optional[Union[str, Sequence[str]]] = None,
         nuclear_units: Optional[Mapping[str, Union[bool, Mapping[str, Any]]]] = None,
+        kirchhoff_voltage_law: bool = False,
 
         # --- I/O ---
         workdir: Union[str, Path] = "output",
@@ -201,6 +202,16 @@ class Transformation:
             Notes:
               - Ignored when `enable_thermal_units=False`.
 
+        kirchhoff_voltage_law : bool, default False
+            Whether the reactance of the lines becomes the susceptance of the
+            network, i.e., whether Kirchhoff's voltage law is imposed as PyPSA
+            imposes it; with it off the AC network is a transport one, whose
+            optimum is below the PyPSA one. It also makes the conversion write
+            the BlockConfig that asks for the KIRCHHOFF formulation and give
+            it to the solver, the one taken by default not being equivalent to
+            it on a network of AC lines and HVDC links up to UCBlock 2b69e107.
+            It is off by default because a released SMS++ has neither.
+
         nuclear_units : Mapping[str, bool | Mapping[str, Any]], optional
             Carriers (case-insensitive) whose thermal generators become
             NuclearUnitBlocks, i.e., ThermalUnitBlocks subject to the operating
@@ -256,6 +267,18 @@ class Transformation:
         """
         # NB: assign a fresh config directly (do NOT deepcopy). 
         self.config = TransformationConfig()
+
+        # the susceptance of the lines, i.e., Kirchhoff's voltage law: PyPSA
+        # always imposes it, SMS++ does when the susceptance is not zero, and
+        # the conversion asks the solver for the formulation that is right
+        # with it [see write_kirchhoff_config()]. It is off by default because
+        # a released SMS++ has neither that formulation nor the fixes the
+        # other one needs (UCBlock 2b69e107), and would answer a network with
+        # lines with a number that is not the optimum of PyPSA
+        self.kirchhoff_voltage_law = bool(kirchhoff_voltage_law)
+        if self.kirchhoff_voltage_law:
+            self.config.Lines_parameters["LineSusceptance"] = (
+                lambda x_pu_eff: 1.0 / x_pu_eff.where(x_pu_eff != 0, np.inf))
 
         self.merge_links = merge_links
         if merge_selector is not None:
