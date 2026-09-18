@@ -1875,6 +1875,80 @@ def forbid_unreachable_switches(thermal_variables, time_horizon):
         thermal_variables[time]["value"] = int(time_horizon) + before
 
 
+def fix_commitment_on(thermal_variables, time_horizon):
+    """
+    Keeps the unit on over the whole horizon, as a non-committable generator.
+
+    PyPSA gives a unit commitment only to a `committable` generator: any other
+    one produces between its minimum and its maximum power at every snapshot,
+    with no choice of being off, while a ThermalUnitBlock always has the
+    commitment variables. They are fixed to 1 by declaring the unit on before
+    the horizon and a minimum up time longer than the horizon itself, which is
+    how a ThermalUnitBlock states that the commitment is not free.
+
+    Parameters
+    ----------
+    thermal_variables : dict
+        The converted ThermalUnitBlock variables of the unit, modified in place.
+    time_horizon : int
+        The number of instants of the horizon.
+    """
+    for name, value in (("InitUpDownTime", 1),
+                        ("MinUpTime", int(time_horizon) + 1),
+                        ("MinDownTime", 1)):
+        entry = thermal_variables.setdefault(name, {"type": "int", "size": ()})
+        entry["value"] = value
+
+    # a unit that is never off pays neither to start up nor to shut down
+    for name in ("StartUpCost", "ShutDownCost"):
+        thermal_variables.pop(name, None)
+
+
+def free_initial_ramp(thermal_variables, time_horizon):
+    """
+    Frees the first instant of the horizon, which PyPSA leaves free.
+
+    A ThermalUnitBlock always starts from its initial power: the output of the
+    first instant is within a ramp of it, and the unit can only shut down there
+    if that power is below the shut-down limit. PyPSA instead bounds the first
+    snapshot only when the network gives `p_init`, and with no `p_init` it
+    drops that row altogether. The two models then agree if nothing of the
+    first instant can bind, which is what this does: the initial power becomes
+    the maximum power of the first instant, and the ramps and the shut-down
+    limit there are raised to the largest maximum power, an upper bound of any
+    change of the output.
+
+    Parameters
+    ----------
+    thermal_variables : dict
+        The converted ThermalUnitBlock variables of the unit, modified in place.
+    time_horizon : int
+        The number of instants of the horizon.
+    """
+    if "MaxPower" not in thermal_variables:
+        return
+
+    max_power = np.atleast_1d(np.asarray(thermal_variables["MaxPower"]["value"],
+                                         dtype=float)).ravel()
+    free = float(np.max(max_power))
+
+    for name in ("DeltaRampUp", "DeltaRampDown", "ShutDownLimit"):
+        if name not in thermal_variables:
+            continue
+        value = np.atleast_1d(np.array(thermal_variables[name]["value"],
+                                       dtype=float)).ravel()
+        if value[0] >= free:
+            continue
+        if value.size == 1:   # one value for the whole horizon: unfold it
+            value = np.full(int(time_horizon), value[0])
+            thermal_variables[name]["size"] = ("TimeHorizon",)
+        value[0] = free
+        thermal_variables[name]["value"] = value
+
+    if "InitialPower" in thermal_variables:
+        thermal_variables["InitialPower"]["value"] = float(max_power[0])
+
+
 def nuclear_rule_variables(rules, thermal_variables, snapshot_hours):
     """
     Computes the variables that turn a ThermalUnitBlock into a NuclearUnitBlock.

@@ -40,6 +40,8 @@ from pypsa2smspp.utils import (
     parse_unitblock_parameters,
     nuclear_rule_variables,
     forbid_unreachable_switches,
+    free_initial_ramp,
+    fix_commitment_on,
     determine_size_type,
     merge_lines_and_links,
     rename_links_to_lines,
@@ -843,7 +845,42 @@ class Transformation:
         dimensions = None
         if attr_name in ("ThermalUnitBlock_parameters",
                          "NuclearUnitBlock_parameters"):
+            # a ThermalUnitBlock has neither a bound on the energy of the
+            # whole horizon (which no Dynamic Programming Solver of it could
+            # enforce either) nor modules of its capacity, so a unit that has
+            # them is refused instead of being written without them
+            name = components_df.index[0]
+            for field in ("e_sum_min", "e_sum_max"):
+                if field in components_df and \
+                        np.isfinite(components_df[field].iloc[0]):
+                    raise ValueError(
+                        f"{name} has {field}, a bound on the energy it "
+                        "generates over the whole horizon, which a "
+                        "ThermalUnitBlock cannot express."
+                    )
+            if "p_nom_mod" in components_df and \
+                    float(components_df["p_nom_mod"].iloc[0]) != 0.0:
+                raise ValueError(
+                    f"{name} is a modular unit (p_nom_mod), whose commitment "
+                    "PyPSA counts in modules, which a ThermalUnitBlock cannot "
+                    "express."
+                )
+
+            # a unit that pays nothing to shut down has no such variable,
+            # as it has none in the block
+            if "ShutDownCost" in converted_dict and \
+                    not np.any(converted_dict["ShutDownCost"]["value"]):
+                del converted_dict["ShutDownCost"]
+
             forbid_unreachable_switches(converted_dict, len(n.snapshots))
+            # PyPSA ramps from the output before the horizon only when the
+            # network gives it, while a ThermalUnitBlock always does
+            if "p_init" not in components_df or \
+                    components_df["p_init"].isna().all():
+                free_initial_ramp(converted_dict, len(n.snapshots))
+            # a generator that PyPSA does not commit is on at every snapshot
+            if not bool(components_df["committable"].iloc[0]):
+                fix_commitment_on(converted_dict, len(n.snapshots))
         if attr_name == "NuclearUnitBlock_parameters":
             carrier = str(components_df["carrier"].iloc[0]).strip().lower()
             rule_variables, dimensions = nuclear_rule_variables(
@@ -2227,6 +2264,11 @@ class Transformation:
                         else dim_value
                     )
     
+            # pySMSpp has no ShutDownCost in its table of the
+            # ThermalUnitBlock: it is added to the Block afterwards, as the
+            # pollutant budget of the UCBlock is
+            shut_down_cost = ub_kwargs.pop("ShutDownCost", None)
+
             # Create Block (pySMSpp has no table for NuclearUnitBlock and
             # infers the kinds from the values, which is what we want)
             with warnings.catch_warnings():
@@ -2239,6 +2281,12 @@ class Transformation:
                     **ub_kwargs,
                 )
     
+            if shut_down_cost is not None:
+                unit_block_obj.add_variable(
+                    "ShutDownCost", shut_down_cost.var_type,
+                    shut_down_cost.dimensions, shut_down_cost.data,
+                )
+
             # Attach to UCBlock
             master.blocks[name_id].add_block(
                 unit_block["enumerate"],
