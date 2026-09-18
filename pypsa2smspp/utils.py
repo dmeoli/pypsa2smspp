@@ -462,8 +462,14 @@ def hydroblock_dimensions():
     """
     dimensions = dict()
     dimensions["NumberReservoirs"] = 1
-    dimensions["NumberArcs"] = 2 * dimensions["NumberReservoirs"]
-    dimensions["TotalNumberPieces"] = 2
+    # a turbine, a pump and a spillway: the last one carries no power, and it
+    # is what makes the relation between the flow of the turbine and its power
+    # an equality rather than the inequality that stands in for a spill
+    # [see HydroUnitBlock::generate_abstract_constraints()]. PyPSA spills only
+    # what flows in, hence the spillway is bounded by the inflow and a pumped
+    # storage unit, which has none, cannot spill at all
+    dimensions["NumberArcs"] = 3 * dimensions["NumberReservoirs"]
+    dimensions["TotalNumberPieces"] = 3
     return dimensions
 
 # -------------------------------- Correction --------------------------------------
