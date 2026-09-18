@@ -14,6 +14,7 @@
 * Fix x_network here-and-now path to index design position, not line id [PR #48](https://github.com/SPSUnipi/pypsa2smspp/pull/48)
 * Drop p_set for dispatchable components [PR #52] (https://github.com/SPSUnipi/pypsa2smspp/pull/52)
 * Correct snapshot_weightings for InvestmentBlock [PR #49] (https://github.com/SPSUnipi/pypsa2smspp/pull/49)
+* Translate the reactance of a `Line` into the susceptance of the network of SMS++, i.e., Kirchhoff's voltage law, which the conversion wrote as zero, turning the AC network into a transport model; it needs the `DCNetworkBlock` fixes of UCBlock `2b69e107`, without which the default (PTDF) formulation disagrees with the KIRCHHOFF one on a network of both kinds of lines
 * Start the ramps of a committable unit from `p_init` when it is given, as PyPSA does, and leave the first instant free when it is not (PyPSA drops that row, a ThermalUnitBlock always ramps from its initial power)
 * Translate `shut_down_cost` into the `ShutDownCost` of the `ThermalUnitBlock`, which the conversion used to drop silently
 * Keep a generator that PyPSA does not commit on at every snapshot, instead of giving it a unit commitment, which relaxed its minimum power and its ramps

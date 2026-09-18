@@ -112,7 +112,9 @@ class TransformationConfig:
             "EndLine": lambda end_line_idx: end_line_idx.values,
             "MinPowerFlow": lambda s_nom, s_max_pu, s_nom_extendable: - (s_nom * s_max_pu).where(~s_nom_extendable, s_max_pu),
             "MaxPowerFlow": lambda s_nom, s_max_pu, s_nom_extendable: (s_nom * s_max_pu).where(~s_nom_extendable, s_max_pu),
-            "LineSusceptance": lambda s_nom: np.zeros_like(s_nom),
+            # the KVL of PyPSA: the flow of a line is the difference of the
+            # voltage angles of its two ends over its reactance in per unit
+            "LineSusceptance": lambda x_pu_eff: 1.0 / x_pu_eff.where(x_pu_eff != 0, np.inf),
             "Efficiency": lambda s_nom: np.ones_like(s_nom),
             "NetworkCost": lambda s_nom: np.zeros_like(s_nom),
             }
