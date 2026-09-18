@@ -14,10 +14,12 @@ limit becomes a pollutant budget constraint of the UCBlock; the netCDF file of
 the UCBlock is written in the output directory, and the reference values are
 printed in the format of the REF_OBJ entries of the SMS++ batch files.
 
-The uncapped extendable assets are given finite caps (1e7 on the capacities,
-1e8 on the links, which become the converters of the stores) as in the other
-resilient instances: with an unbounded design some Lagrangian subproblem is
-unbounded, which a LagrangianDualSolver cannot cope with.
+The extendable assets keep the infinite capacities the networks give them,
+unlike the instances of the other generators, which cap them (1e7 on the
+capacities, 1e8 on the links, which become the converters of the stores): an
+unbounded design makes some Lagrangian subproblem unbounded, whose feasibility
+linearizations a bundle has to be able to remove from its master problem for
+the dual to converge.
 
 Note that the Excel networks are not deterministic, hence the references must
 be taken from the same run that writes the files.
@@ -128,7 +130,6 @@ def generate(name, case, rates, limits, out_dir):
     n = NetworkDefinition(create_test_config(paths[case])).n
     n = clean_ciclicity_storage(n)
     n = add_slack_unit(n)
-    cap_extendable_assets(n)
 
     for attribute, by_carrier in rates.items():
         if attribute not in n.carriers.columns:
