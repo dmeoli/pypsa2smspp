@@ -204,23 +204,19 @@ class Transformation:
 
         kirchhoff_voltage_law : bool, default False
             Whether the reactance of the lines becomes the susceptance of the
-            network, i.e., whether Kirchhoff's voltage law is imposed as PyPSA
-            imposes it; with it off the AC network is a transport one, whose
-            optimum is below the PyPSA one. It also makes the conversion write
-            the BlockConfig that asks for the KIRCHHOFF formulation and give
-            it to the solver, the one taken by default not being equivalent to
-            it on a network of AC lines and HVDC links up to UCBlock 2b69e107.
-            It is off by default because a released SMS++ has neither.
+            network, i.e., whether the flows obey Kirchhoff's voltage law as
+            they do in PyPSA; with it off the AC network is a transport one.
+            It is off by default because it needs a formulation that no
+            released SMS++ has.
 
         nuclear_units : Mapping[str, bool | Mapping[str, Any]], optional
             Carriers (case-insensitive) whose thermal generators become
-            NuclearUnitBlocks, i.e., ThermalUnitBlocks subject to the operating
-            rules of a load-following nuclear unit. Each carrier maps to True,
-            which applies `constants.nuclear_rules_default`, or to a mapping
-            that overrides some of those rules (a rule set to None is not
-            emitted). Durations are in hours and require a uniform snapshot
-            weighting. PyPSA has no such rules, hence its optimum is a
-            relaxation of the SMS++ one.
+            NuclearUnitBlocks, i.e., ThermalUnitBlocks subject to the
+            operating rules of a load-following nuclear unit. Each carrier
+            maps to True, which applies `constants.nuclear_rules_default`, or
+            to a mapping that overrides some of those rules (a rule set to
+            None is not emitted). Durations are in hours, and need a uniform
+            snapshot weighting.
 
             Notes:
               - Ignored when `enable_thermal_units=False`.
