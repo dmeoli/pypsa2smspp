@@ -14,10 +14,13 @@ NuclearUnitBlocks through the `nuclear_units` option:
 Both cases also check that the operating rules are written in the netCDF file.
 """
 from pathlib import Path
+import shutil
+import subprocess
 
 import netCDF4 as nc
 import numpy as np
 import pypsa
+import pysmspp
 import pytest
 
 from conftest import safe_remove, REL_TOL, ABS_TOL, OUT_TEST
@@ -33,12 +36,65 @@ NON_BINDING_RULES = {key: None for key in nuclear_rules_default}
 NON_BINDING_RULES.update(modulation_ramp_fraction=1.0, modulation_time=2.0)
 
 
-def nuclear_network(snapshots: int = 48) -> pypsa.Network:
+def solver_reads_nuclear_rules():
     """
-    One bus, four committable nuclear units that start on, a peaking unit that
-    starts off, and a load shedding generator; the load follows a daily cycle
-    whose peak is at the first snapshot, so that the initial power of the
-    nuclear units is reachable.
+    True if the ucblock_solver on PATH reads the operating rules of a nuclear
+    unit.
+
+    The rules are in SMS++ since UCBlock 1cf3cba5, while the NuclearUnitBlock
+    itself is older and silently ignores them, so the check cannot be a file
+    that only the new one loads; it is a file that only the new one refuses,
+    i.e., a NuclearUnitBlock whose two "PowerBands" do not increase. Without
+    the rules the tests are skipped rather than failed.
+    """
+    solver = shutil.which("ucblock_solver")
+    if solver is None:
+        return False
+
+    probe = OUT_TEST / "nuclear_probe.nc4"
+    with nc.Dataset(probe, "w") as dataset:
+        dataset.setncattr("SMS++_file_type", 1)
+        uc = dataset.createGroup("Block_0")
+        uc.setncattr("type", "UCBlock")
+        for dim, size in (("TimeHorizon", 1), ("NumberUnits", 1),
+                          ("NumberElectricalGenerators", 1),
+                          ("NumberNodes", 1)):
+            uc.createDimension(dim, size)
+        uc.createVariable("ActivePowerDemand", "f8",
+                          ("NumberNodes", "TimeHorizon"))[:] = 1.0
+        unit = uc.createGroup("UnitBlock_0")
+        unit.setncattr("type", "NuclearUnitBlock")
+        unit.createVariable("MinPower", "f8")[...] = 0.0
+        unit.createVariable("MaxPower", "f8")[...] = 10.0
+        unit.createDimension("NumberPowerBands", 2)
+        unit.createVariable("PowerBands", "f8",
+                            ("NumberPowerBands",))[:] = [0.8, 0.2]
+
+    config = (Path(pysmspp.__file__).parent / "data" / "configs" / "UCBlock" /
+              "uc_solverconfig.txt")
+    try:
+        run = subprocess.run([solver, "-D", "-S", str(config), str(probe)],
+                             capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+    return "PowerBands" in run.stdout + run.stderr
+
+
+reads_nuclear_rules = pytest.mark.skipif(
+    not solver_reads_nuclear_rules(),
+    reason="the SMS++ ucblock_solver on PATH does not read the nuclear rules",
+)
+
+
+def nuclear_network(snapshots: int = 48, units: int = 4,
+                    load_scale: float = 1.0) -> pypsa.Network:
+    """
+    One bus, `units` committable nuclear units that start on, a peaking unit
+    that starts off, and a load shedding generator; the load follows a daily
+    cycle whose peak is at the first snapshot, so that the initial power of the
+    nuclear units is reachable, scaled by `load_scale`, the smaller scales
+    being those that make the nuclear units modulate.
     """
     n = pypsa.Network()
     n.set_snapshots(range(snapshots))
@@ -47,9 +103,9 @@ def nuclear_network(snapshots: int = 48) -> pypsa.Network:
 
     t = np.arange(snapshots)
     n.add("Load", "load", bus="bus",
-          p_set=3000.0 + 1200.0 * np.cos(2.0 * np.pi * t / 24.0))
+          p_set=load_scale * (3000.0 + 1200.0 * np.cos(2.0 * np.pi * t / 24.0)))
 
-    for i, p_nom in enumerate([1300.0, 1300.0, 900.0, 900.0]):
+    for i, p_nom in enumerate([1300.0, 1300.0, 900.0, 900.0][:units]):
         n.add("Generator", f"nuclear{i}", bus="bus", carrier="nuclear",
               p_nom=p_nom, marginal_cost=9.0 + i, committable=True,
               p_min_pu=0.5, ramp_limit_up=0.3, ramp_limit_down=0.3,
@@ -65,7 +121,7 @@ def nuclear_network(snapshots: int = 48) -> pypsa.Network:
     return n
 
 
-def run_nuclear(case_name: str, rules) -> tuple[float, float, Path]:
+def run_nuclear(case_name: str, rules, **network) -> tuple[float, float, Path]:
     """
     Solves the network with PyPSA and with SMS++, the nuclear units being
     NuclearUnitBlocks with the given rules; returns both objectives and the
@@ -74,9 +130,9 @@ def run_nuclear(case_name: str, rules) -> tuple[float, float, Path]:
     temp_nc = OUT_TEST / f"smspp_{case_name}_temp.nc"
     safe_remove(temp_nc)
 
-    network = nuclear_network()
-    network.optimize(solver_name="highs")
-    obj_pypsa = float(network.objective)
+    reference = nuclear_network(**network)
+    reference.optimize(solver_name="highs")
+    obj_pypsa = float(reference.objective)
 
     transformation = Transformation(
         capacity_expansion_ucblock=True,
@@ -91,7 +147,7 @@ def run_nuclear(case_name: str, rules) -> tuple[float, float, Path]:
         fp_solution="smspp_{name}_solution.nc",
         configfile="auto",
     )
-    transformation.run(nuclear_network(), verbose=False)
+    transformation.run(nuclear_network(**network), verbose=False)
 
     return obj_pypsa, float(transformation.result.objective_value), temp_nc
 
@@ -111,6 +167,7 @@ def nuclear_groups(temp_nc: Path) -> list:
         return [(g.name, set(g.variables)) for g in groups]
 
 
+@reads_nuclear_rules
 def test_nuclear_non_binding_rules():
     obj_pypsa, obj_smspp, temp_nc = run_nuclear("nuclear_non_binding",
                                                 NON_BINDING_RULES)
@@ -125,11 +182,16 @@ def test_nuclear_non_binding_rules():
     assert obj_smspp == pytest.approx(obj_pypsa, rel=REL_TOL, abs=ABS_TOL)
 
 
+@reads_nuclear_rules
 def test_nuclear_default_rules():
-    obj_pypsa, obj_smspp, temp_nc = run_nuclear("nuclear_default", True)
+    # one unit and a load that it can follow: with the default rules the
+    # problem is a hard MILP, and four units do not close in an hour
+    obj_pypsa, obj_smspp, temp_nc = run_nuclear("nuclear_default", True,
+                                                snapshots=24, units=1,
+                                                load_scale=0.35)
 
     groups = nuclear_groups(temp_nc)
-    assert len(groups) == 4
+    assert len(groups) == 1
     for _, variables in groups:
         assert {"ModulationTime", "MaxModulationLength", "DayLength",
                 "ModulationsPerDay", "StartUpsPerDay", "PowerBands",
