@@ -33,3 +33,15 @@ inner Block the design starves, and `test/instance_generator.py` passes it
 explicitly, being run against a build of the 2.0. The presolve of its master
 is left at its default: with it off the master of a design over several
 extendable lines ends in "Bundle::FormD: unrecoverable MP failure".
+
+The same `BSPar_2.0.txt`, `MPBCfg.txt` and `BSCfg1.txt` serve an InvestmentBlock
+whose inner Block is a whole TwoStageStochasticBlock or MultiStageStochasticBlock,
+as `investment_outside` writes it, i.e., a Benders decomposition with the design
+in the master and the scenarios, solved together by GUROBI, in the value
+function: `strInnerBSC` gives `BSCfg1.txt` to the stochastic Block, and its
+`intHomogeneousDirection 1` is what lets a design that makes a scenario
+infeasible produce a feasibility cut. On the stochastic instances of the tests
+this form reaches the value of the deterministic equivalent, but it is not
+faster than it, as expected with a single block of complicating variables; it
+has not yet been measured with these files, whose master differs from the one
+of those runs.
