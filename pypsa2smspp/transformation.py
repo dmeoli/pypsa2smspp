@@ -1527,8 +1527,9 @@ class Transformation:
         """
         Existing deterministic inverse transformation.
         """
-        all_dataarrays = self.iterate_blocks(n)
-        self.ds = xr.Dataset(all_dataarrays)
+        # iterate_blocks() merges the blocks into a Dataset already, and
+        # xarray refuses to build one out of a Dataset
+        self.ds = self.iterate_blocks(n)
     
         prepare_solution(
             n,
