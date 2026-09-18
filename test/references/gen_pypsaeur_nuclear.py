@@ -9,6 +9,9 @@ optimum is computed once; then the network is translated three times:
 - `tub`: the nuclear units are ThermalUnitBlocks, as without `nuclear_units`;
 - `nub-free`: they are NuclearUnitBlocks whose rules do not bind (the full
   ramps outside the modulations and no other rule), i.e., the same problem;
+- `nub-modulation`, `nub-daily`, `nub-bands`, `nub-deep`: one family of the
+  rules at a time on top of the modulations, which says what each of them
+  costs;
 - `nub-rules`: they are NuclearUnitBlocks with `nuclear_rules_default`.
 
 The inflow of the hydro units is cut at their largest outflow, since a
@@ -47,9 +50,29 @@ warnings.filterwarnings("ignore")
 NON_BINDING_RULES = {key: None for key in nuclear_rules_default}
 NON_BINDING_RULES.update(modulation_ramp_fraction=1.0, modulation_time=2.0)
 
+def with_rules(*names):
+    """The non-binding rules, with the named ones as nuclear_rules_default has
+    them."""
+    merged = dict(NON_BINDING_RULES)
+    merged.update({name: nuclear_rules_default[name] for name in names})
+    return merged
+
+
 VARIANTS = {
     "tub": None,
     "nub-free": NON_BINDING_RULES,
+    # one family of rules at a time, to see what each of them costs
+    "nub-modulation": with_rules("modulation_ramp_fraction", "modulation_time",
+                                 "max_modulation_length"),
+    "nub-daily": with_rules("modulation_ramp_fraction", "modulation_time",
+                            "max_modulation_length", "day_length",
+                            "modulations_per_day", "start_ups_per_day"),
+    "nub-bands": with_rules("modulation_ramp_fraction", "modulation_time",
+                            "power_bands"),
+    "nub-deep": with_rules("modulation_ramp_fraction", "modulation_time",
+                           "day_length", "deep_decrease_threshold",
+                           "deep_decrease_gradient", "deep_decreases_per_day",
+                           "deep_decrease_cost"),
     "nub-rules": True,
 }
 
@@ -132,12 +155,22 @@ def main():
         transformation.create_model(prepare(args), verbose=False)
         transformation.optimize(verbose=False)
         obj_smspp = float(transformation.result.objective_value)
+        # a rule-bearing instance is a hard MILP: what the solver gives may be
+        # a pair of bounds rather than an optimum, hence the bound and the
+        # status go with the value
+        bound = getattr(transformation.result, "lower_bound", None)
+        bound = None if bound is None else float(bound)
+        status = str(transformation.result.status)
         rel = (obj_smspp - obj_pypsa) / abs(obj_pypsa)
-        print(f"  {variant:10s} SMS++ {obj_smspp:.10g}  rel {rel:+.3e}")
+        gap = ("" if bound is None or not obj_smspp
+               else f"  gap {abs(obj_smspp - bound) / abs(obj_smspp):.1e}")
+        print(f"  {variant:15s} SMS++ {obj_smspp:.10g}  rel {rel:+.3e}{gap}"
+              f"  [{status}]")
         rows.append({"name": name, "variant": variant,
                      "snapshots": args.snapshots, "start": args.start,
                      "nuclear_units": nuclear, "obj_pypsa": obj_pypsa,
-                     "obj_smspp": obj_smspp, "rel_diff": rel})
+                     "obj_smspp": obj_smspp, "rel_diff": rel,
+                     "lower_bound": bound, "status": status})
 
     with open(args.outdir / f"{name}.csv", "w", newline="") as fp:
         writer = csv.DictWriter(fp, fieldnames=list(rows[0]))
