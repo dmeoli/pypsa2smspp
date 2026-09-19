@@ -14,12 +14,15 @@ limit becomes a pollutant budget constraint of the UCBlock; the netCDF file of
 the UCBlock is written in the output directory, and the reference values are
 printed in the format of the REF_OBJ entries of the SMS++ batch files.
 
-The extendable assets keep the infinite capacities the networks give them,
-unlike the instances of the other generators, which cap them (1e7 on the
-capacities, 1e8 on the links, which become the converters of the stores): an
-unbounded design makes some Lagrangian subproblem unbounded, whose feasibility
-linearizations a bundle has to be able to remove from its master problem for
-the dual to converge.
+The extendable assets whose bound is infinite are given one that comes from
+the demand of the network itself (bound_extendable_assets of pypsa2smspp),
+since a design with no bound makes the Lagrangian subproblem unbounded while a
+bound picked out of thin air is worse than no bound at all: the design is
+bang-bang, the value of the component becomes the bound times the investment
+cost, and the master problem of the bundle ends up with coefficients its
+quadratic term cannot be compared with. SMSPP_DESIGN_BOUNDS chooses among the
+three ways of writing the instances, "physical" (the default), "none" and
+"sentinel", so that the same network can be run in all of them.
 
 Note that the Excel networks are not deterministic, hence the references must
 be taken from the same run that writes the files.
@@ -29,6 +32,7 @@ Usage:
 """
 
 import numpy as np
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -39,7 +43,9 @@ sys.path.insert(0, str(HERE))
 from conftest import create_test_config, test_cases
 from network_definition import NetworkDefinition
 from pypsa2smspp.transformation import Transformation
-from pypsa2smspp.network_correction import clean_ciclicity_storage, add_slack_unit
+from pypsa2smspp.network_correction import (add_slack_unit,
+                                            bound_extendable_assets,
+                                            clean_ciclicity_storage)
 
 
 # =============================================================================
@@ -76,15 +82,6 @@ VARIANTS = {
                   [("primary_energy", "co2_emissions", "<=", 0.5)]),
 }
 
-# (component, nominal attribute, cap) for the uncapped extendable assets
-CAPS = (
-    ("generators", "p_nom", 1e7),
-    ("storage_units", "p_nom", 1e7),
-    ("stores", "e_nom", 1e7),
-    ("lines", "s_nom", 1e7),
-    ("links", "p_nom", 1e8),
-)
-
 SOLVER_NAME = "highs"
 
 
@@ -113,14 +110,9 @@ def emissions(n, attribute):
     return total
 
 
-def cap_extendable_assets(n):
-    """Give the uncapped extendable assets the finite caps of CAPS."""
-    for component, attribute, cap in CAPS:
-        df = getattr(n, component)
-        if df.empty:
-            continue
-        uncapped = df[f"{attribute}_extendable"] & (df[f"{attribute}_max"] == float("inf"))
-        df.loc[uncapped, f"{attribute}_max"] = cap
+def design_bounds_mode():
+    """The way the design bounds are written, from SMSPP_DESIGN_BOUNDS."""
+    return os.environ.get("SMSPP_DESIGN_BOUNDS", "physical")
 
 
 def generate(name, case, rates, limits, out_dir):
@@ -130,6 +122,7 @@ def generate(name, case, rates, limits, out_dir):
     n = NetworkDefinition(create_test_config(paths[case])).n
     n = clean_ciclicity_storage(n)
     n = add_slack_unit(n)
+    n = bound_extendable_assets(n, design_bounds_mode())
 
     for attribute, by_carrier in rates.items():
         if attribute not in n.carriers.columns:

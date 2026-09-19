@@ -1414,4 +1414,130 @@ if __name__ == '__main__':
     network.optimize(solver_name='gurobi')
 
 
+def total_demand(n):
+    """
+    The peak and the energy of the demand of a network.
 
+    Returns the largest total load over the snapshots and the energy the loads
+    ask for over the whole horizon, the snapshot weightings included. On a
+    stochastic network the loads are indexed by (scenario, name) and the
+    scenarios are not served together, so the totals are taken within each
+    scenario and the worst one is returned, summing across them would describe
+    a demand that never occurs.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        The network the demand is read from.
+
+    Returns
+    -------
+    (float, float)
+        The peak of the total load and the energy it asks for.
+    """
+    demand = n.loads_t.p_set
+    if demand.empty:
+        return 0.0, 0.0
+
+    if isinstance(demand.columns, pd.MultiIndex) and "scenario" in (
+        demand.columns.names or []
+    ):
+        demand = demand.T.groupby(level="scenario").sum().T
+    else:
+        demand = demand.sum(axis=1).to_frame("total")
+
+    weights = n.snapshot_weightings.generators.reindex(demand.index).fillna(1.0)
+    peak = float(demand.to_numpy().max())
+    energy = float(demand.multiply(weights, axis=0).sum().max())
+    return peak, energy
+
+
+# the design attributes that a finite bound is given to, by component and by
+# the kind of quantity they hold: a power is bounded by the peak of the demand
+# and an energy by the energy the demand asks for
+DESIGN_ATTRIBUTES = (
+    ("generators", "p_nom", "power"),
+    ("storage_units", "p_nom", "power"),
+    ("lines", "s_nom", "power"),
+    ("links", "p_nom", "power"),
+    ("stores", "e_nom", "energy"),
+)
+
+# the finite numbers the instances used to be written with, kept so that the
+# two ways of bounding a design can be compared on the same network
+SENTINEL_BOUNDS = {
+    "generators": 1e7,
+    "storage_units": 1e7,
+    "stores": 1e7,
+    "lines": 1e7,
+    "links": 1e8,
+}
+
+
+def bound_extendable_assets(n, mode="physical", safety=2.0):
+    """
+    Give a finite bound to the extendable assets whose bound is infinite.
+
+    An extendable asset with no bound makes the Lagrangian subproblem that
+    holds it unbounded, which only a bundle able to remove the feasibility
+    linearizations it then produces can cope with; a bound picked out of thin
+    air, on the other hand, is worse than no bound at all, because the design
+    variable is bang-bang and the value of the component becomes the bound
+    times the investment cost, so the master problem of the bundle ends up
+    with coefficients that its quadratic term cannot be compared with (with
+    the 1e7 and 1e8 of SENTINEL_BOUNDS the linearization errors reach 1e10
+    against a proximal term of 10, and the solver of the master gives up).
+
+    The bound this computes instead comes from the network itself and costs
+    nothing to obtain: no asset can be used beyond what the demand is able to
+    absorb, so a power is bounded by the peak of the total load and an energy
+    by the energy the loads ask for over the horizon, both multiplied by
+    @p safety, which covers the charging that the same rule bounds. It is a
+    bound, not the smallest one: it is there to keep the subproblem bounded
+    without pretending to be the tightest, and where it turns out to bind, the
+    network is asking for a design the demand cannot use.
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        The network whose extendable assets are bounded, changed in place.
+    mode : str, optional
+        "physical" for the bound described above, "sentinel" for the fixed
+        numbers of SENTINEL_BOUNDS, "none" to leave the infinite bounds as
+        they are. Default: "physical".
+    safety : float, optional
+        What the peak and the energy of the demand are multiplied by.
+        Default: 2.0.
+
+    Returns
+    -------
+    n : pypsa.Network
+        The same network, bounded in place.
+    """
+    if mode == "none":
+        return n
+    if mode not in ("physical", "sentinel"):
+        raise ValueError(f"bound_extendable_assets: unknown mode {mode}")
+
+    peak, energy = total_demand(n)
+
+    for component, attribute, kind in DESIGN_ATTRIBUTES:
+        df = getattr(n, component)
+        if df.empty:
+            continue
+        extendable = f"{attribute}_extendable"
+        maximum = f"{attribute}_max"
+        if extendable not in df.columns or maximum not in df.columns:
+            continue
+
+        if mode == "sentinel":
+            bound = SENTINEL_BOUNDS[component]
+        else:
+            bound = safety * (peak if kind == "power" else energy)
+            if not bound > 0:
+                continue
+
+        unbounded = df[extendable] & np.isinf(df[maximum])
+        df.loc[unbounded, maximum] = bound
+
+    return n

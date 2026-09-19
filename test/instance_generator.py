@@ -37,9 +37,11 @@ sys.path.insert(0, str(HERE))
 
 from conftest import create_test_config, test_cases
 from network_definition import NetworkDefinition
-from pollutant_generator import cap_extendable_assets
+from pollutant_generator import design_bounds_mode
 from pypsa2smspp.transformation import Transformation
-from pypsa2smspp.network_correction import clean_ciclicity_storage, add_slack_unit
+from pypsa2smspp.network_correction import (add_slack_unit,
+                                            bound_extendable_assets,
+                                            clean_ciclicity_storage)
 
 
 # the seed of each case, so that its network is always the same one
@@ -74,9 +76,10 @@ def build(xlsx_path):
     n = clean_ciclicity_storage(n)
     if "sector" not in xlsx_path.name:
         n = add_slack_unit(n)
-    # an uncapped extendable asset makes a Lagrangian subproblem unbounded,
-    # which a LagrangianDualSolver cannot cope with [see pollutant_generator]
-    cap_extendable_assets(n)
+    # an extendable asset with no bound makes a Lagrangian subproblem
+    # unbounded, and one bounded out of thin air makes the master problem of
+    # the bundle ill-conditioned [see pollutant_generator]
+    n = bound_extendable_assets(n, design_bounds_mode())
     return n, getattr(parser, "solver_name", "highs")
 
 
