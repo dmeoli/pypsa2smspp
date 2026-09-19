@@ -290,6 +290,41 @@ def test_tssb(xlsx_path, stochastic_parameters):
     )
 
 
+# ---------------------------------------------------------------------------
+# design_cost_outside and the units that lose their design Variable
+# ---------------------------------------------------------------------------
+
+def test_design_cost_outside_refuses_extendable_intermittent_units():
+    """
+    An IntermittentUnitBlock has its design Variable only when its
+    InvestmentCost is not zero, so taking the cost out of an extendable one
+    would take the Variable away too, and leave the path that ties its copies
+    across the scenarios pointing at nothing: it is refused instead.
+    """
+    n = pypsa.Network(
+        str(Path(__file__).resolve().parent / "networks"
+            / "pypsa_stoch_load.nc"))
+
+    transformation = Transformation(
+        name="tssb_design_cost_outside_refused",
+        configfile="TSSBlock/TSSBSCfg.txt",
+        enable_thermal_units=False,
+        capacity_expansion_ucblock=True,
+        workdir=str(OUT_TEST / "tssb" / "design_cost_outside_refused"),
+        stochastic_parameters={
+            "stochastic_type": "tssb",
+            "parameters": ["demand"],
+            "investment_outside": True,
+            "design_cost_outside": True,
+        },
+        overwrite=True,
+        fp_temp="smspp_{name}_temp.nc",
+    )
+
+    with pytest.raises(ValueError, match="IntermittentUnitBlock"):
+        transformation.create_model(n, verbose=False)
+
+
 if __name__ == "__main__":
     safe_remove(OBJECTIVES_CSV)
 

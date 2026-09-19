@@ -812,6 +812,21 @@ class Transformation:
         else:
             nom = nominal_attrs[components_type]
             ext = components_df[f"{nom}_extendable"].iloc[0]
+            if ( ext and self.capacity_expansion_ucblock
+                 and "IntermittentUnitBlock" in name
+                 and self.problem_structure.get("design_cost_outside",
+                                                False) ):
+                raise ValueError(
+                    f"'design_cost_outside' cannot be applied to the "
+                    f"extendable unit {components_df.index[0]!r}, which "
+                    "becomes an IntermittentUnitBlock: such a unit has its "
+                    "design Variable only when its InvestmentCost is not "
+                    "zero, so taking the cost out of it takes the Variable "
+                    "away too, and the path that ties its copies across the "
+                    "scenarios would point at nothing. Leave "
+                    "'design_cost_outside' out, or make the unit "
+                    "non-extendable."
+                )
             design_key = (
                 "DesignVariable" if not self.capacity_expansion_ucblock else
                 ("IntermittentDesign" if "IntermittentUnitBlock" in name else
